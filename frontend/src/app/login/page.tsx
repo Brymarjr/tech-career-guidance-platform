@@ -2,48 +2,86 @@
 
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { motion } from "framer-motion";
+import { toast } from "sonner";
+import { LogIn, Mail, Lock, Eye, EyeOff } from "lucide-react";
 
 export default function Login() {
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await login({ email, password });
+      toast.success("Welcome back! Loading your dashboard...");
     } catch (error) {
-      alert("Invalid credentials. Please try again.");
+      toast.error("Invalid credentials. Please try again.");
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <form onSubmit={handleSubmit} className="p-8 bg-white rounded-xl shadow-lg w-full max-w-md border border-gray-100">
-        <h2 className="text-3xl font-extrabold mb-6 text-primary text-center">Welcome Back</h2>
-        <div className="space-y-4">
-          <input
-            type="email"
-            placeholder="Email Address"
-            className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-primary"
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-primary"
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          <button type="submit" className="w-full bg-secondary text-white p-3 rounded-lg font-bold hover:brightness-110 transition-all">
-            Login to Dashboard
-          </button>
-          <p className="text-center text-sm text-gray-500 mt-4">
-            Don't have an account? <a href="/register" className="text-primary font-semibold">Register here</a>
-          </p>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#3730A3] via-indigo-800 to-emerald-900 p-6">
+      <motion.div 
+        initial={{ opacity: 0, x: -50 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.5 }}
+        className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-10"
+      >
+        <div className="text-center mb-10">
+          <div className="inline-flex p-4 bg-indigo-50 rounded-2xl text-primary mb-4">
+            <LogIn size={32} />
+          </div>
+          <h2 className="text-4xl font-black text-[#3730A3]">Welcome Back</h2>
+          <p className="text-gray-500 font-medium">Continue your career journey</p>
         </div>
-      </form>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="relative">
+            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+            <input
+              type="email"
+              placeholder="Email Address"
+              className="w-full p-4 pl-12 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-secondary outline-none transition-all text-gray-900"
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="relative">
+            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder="Password"
+              className="w-full p-4 pl-12 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-secondary outline-none transition-all text-gray-900"
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary"
+            >
+              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+            </button>
+          </div>
+
+          <motion.button 
+            whileHover={{ scale: 1.02, backgroundColor: "#059669" }}
+            whileTap={{ scale: 0.98 }}
+            type="submit" 
+            className="w-full bg-[#10B981] text-white font-bold py-4 rounded-2xl shadow-lg shadow-emerald-500/30 transition-all text-lg"
+          >
+            Login to Account
+          </motion.button>
+        </form>
+
+        <p className="mt-8 text-center text-gray-600 font-medium">
+          New here? <a href="/register" className="text-[#3730A3] font-bold hover:underline">Create Account</a>
+        </p>
+      </motion.div>
     </div>
   );
 }

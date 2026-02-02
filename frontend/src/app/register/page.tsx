@@ -5,6 +5,7 @@ import api from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, Rocket, Brain } from "lucide-react";
+import { toast } from "sonner";
 
 export default function Register() {
   const router = useRouter();
@@ -18,13 +19,19 @@ export default function Register() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      await api.post("users/register/", formData);
-      alert("Registration Successful!");
-      router.push("/login");
-    } catch (error: any) {
-      alert("Error: Please check your details.");
-    }
+    const promise = api.post("users/register/", formData);
+
+    toast.promise(promise, {
+      loading: 'Creating your career profile...',
+      success: () => {
+        setTimeout(() => router.push("/login"), 2000);
+        return 'Account created! Welcome to the future of tech.';
+      },
+      error: (err) => {
+        const detail = err.response?.data?.email || err.response?.data?.username || "Check your details.";
+        return `Registration failed: ${detail}`;
+      },
+    });
   };
 
   return (
