@@ -3,9 +3,12 @@
 import { useState } from "react";
 import api from "@/lib/api";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
+import { Eye, EyeOff, Rocket, Brain } from "lucide-react";
 
 export default function Register() {
   const router = useRouter();
+  const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     email: "",
     username: "",
@@ -16,59 +19,89 @@ export default function Register() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // Calling our v1 versioned API
       await api.post("users/register/", formData);
-      alert("Registration Successful! Redirecting to login...");
+      alert("Registration Successful!");
       router.push("/login");
     } catch (error: any) {
-      console.error("Registration failed", error.response?.data);
-      alert("Registration failed. Please check your details.");
+      alert("Error: Please check your details.");
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <form onSubmit={handleSubmit} className="p-8 bg-white rounded-xl shadow-lg w-full max-w-md border border-gray-100">
-        <h2 className="text-3xl font-extrabold mb-2 text-primary text-center">Join the Platform</h2>
-        <p className="text-gray-500 text-center mb-8">Start your tech career journey today.</p>
-        
-        <div className="space-y-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-900 via-[#3730A3] to-emerald-900 p-6">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+        className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-10 border border-white/20"
+      >
+        <div className="text-center mb-8">
+          <h2 className="text-4xl font-black text-[#3730A3] mb-2 tracking-tight">Create Account</h2>
+          <p className="text-gray-500 font-medium">Join our tech career community</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
           <input
             type="text"
+            className="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-[#10B981] focus:ring-4 focus:ring-[#10B981]/10 outline-none transition-all text-gray-900"
             placeholder="Username"
-            className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition"
             onChange={(e) => setFormData({ ...formData, username: e.target.value })}
             required
           />
+
           <input
             type="email"
+            className="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-[#10B981] focus:ring-4 focus:ring-[#10B981]/10 outline-none transition-all text-gray-900"
             placeholder="Email Address"
-            className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition"
             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
             required
           />
-          <input
-            type="password"
-            placeholder="Password"
-            className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition"
-            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-            required
-          />
-          
-          <select 
-            className="w-full p-3 border border-gray-200 rounded-lg bg-white outline-none focus:ring-2 focus:ring-primary"
-            onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-            value={formData.role}
-          >
-            <option value="STUDENT">I am a Student / Career Seeker</option>
-            <option value="MENTOR">I am a Mentor</option>
-          </select>
 
-          <button type="submit" className="w-full bg-secondary text-white p-3 rounded-lg font-bold hover:brightness-110 active:scale-[0.98] transition-all mt-4">
-            Create Account
-          </button>
-        </div>
-      </form>
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              className="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-[#10B981] focus:ring-4 focus:ring-[#10B981]/10 outline-none transition-all text-gray-900"
+              placeholder="Password"
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#3730A3] transition-colors"
+            >
+              {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+            </button>
+          </div>
+
+          <div className="relative">
+            <select 
+              className="w-full p-4 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-[#10B981] outline-none transition-all text-gray-900 appearance-none cursor-pointer"
+              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+            >
+              <option value="STUDENT">Student / Learner</option>
+              <option value="MENTOR">Mentor / Professional</option>
+            </select>
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-[#10B981]">
+              {formData.role === "STUDENT" ? <Rocket size={20} /> : <Brain size={20} />}
+            </div>
+          </div>
+
+          <motion.button 
+            whileHover={{ scale: 1.02, backgroundColor: "#059669" }}
+            whileTap={{ scale: 0.98 }}
+            type="submit" 
+            className="w-full bg-[#10B981] text-white font-bold py-4 rounded-2xl shadow-lg shadow-emerald-500/30 transition-all block text-center !opacity-100"
+            style={{ backgroundColor: "#10B981", color: "#FFFFFF" }}
+          >
+            Create My Account
+          </motion.button>
+        </form>
+
+        <p className="mt-8 text-center text-gray-600 font-medium">
+          Already a member? <a href="/login" className="text-[#3730A3] font-bold hover:underline">Sign In</a>
+        </p>
+      </motion.div>
     </div>
   );
 }
