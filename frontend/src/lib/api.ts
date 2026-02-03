@@ -13,4 +13,9 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+export const toggleMilestone = async (milestoneId: number) => {
+  const response = await api.post(`assessments/milestone/${milestoneId}/toggle/`);
+  return response.data;
+};
+
 export default api;
