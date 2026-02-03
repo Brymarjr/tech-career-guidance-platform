@@ -1,8 +1,8 @@
-from rest_framework.test import APITestCase  
+from rest_framework.test import APITestCase
 from django.contrib.auth import get_user_model
 from .models import AssessmentResult
 
-class AssessmentLogicTests(APITestCase): 
+class AssessmentLogicTests(APITestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(
             email='tester@riasec.com',
@@ -10,28 +10,35 @@ class AssessmentLogicTests(APITestCase):
             password='Password123!'
         )
 
-    def test_save_assessment_result(self):
-        """Verify that we can save and retrieve a RIASEC score set."""
-        scores_data = {"R": 15, "I": 30, "A": 10, "S": 5, "E": 20, "C": 10}
-        result = AssessmentResult.objects.create(
-            user=self.user,
-            scores=scores_data,
-            top_trait="Investigative"
-        )
-        self.assertEqual(result.top_trait, "Investigative")
-        self.assertEqual(result.scores['I'], 30)
-
-    def test_scoring_logic_endpoint(self):
-        """Test the API endpoint correctly calculates the top trait."""
-        # Force_authenticate will work because we are using APITestCase
+    def test_scoring_and_roadmap_integration(self):
+        """Verify that submitting an assessment returns a top trait and roadmap exists."""
         self.client.force_authenticate(user=self.user)
         payload = {
             "answers": [
                 {"type": "I", "value": 1},
                 {"type": "I", "value": 1},
-                {"type": "R", "value": 1}
+                {"type": "A", "value": 0}
             ]
         }
         response = self.client.post('/api/v1/assessments/submit/', payload, format='json')
+        
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['top_trait'], "Investigative")
+
+    def test_dashboard_summary_with_roadmap(self):
+        """Verify the dashboard API returns the user profile and the mapped roadmap."""
+        # Create a dummy result first
+        AssessmentResult.objects.create(
+            user=self.user,
+            scores={"I": 10, "R": 2},
+            top_trait="Investigative"
+        )
+        
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get('/api/v1/assessments/dashboard-summary/')
+        
+        self.assertEqual(response.status_code, 200)
+        # Check if the roadmap and milestone details are present
+        self.assertIn('roadmap', response.data)
+        self.assertIn('milestone_details', response.data['roadmap'])
+        self.assertEqual(response.data['roadmap']['title'], 'The Data & AI Path')

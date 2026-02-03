@@ -19,6 +19,7 @@ class Question(models.Model):
     def __str__(self):
         return f"[{self.riasec_type}] {self.text[:50]}"
 
+
 class AssessmentResult(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -29,3 +30,14 @@ class AssessmentResult(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.top_trait} ({self.created_at.date()})"
+
+
+class LearningResource(models.Model):
+    title = models.CharField(max_length=255)
+    url = models.URLField()
+    category = models.CharField(max_length=100) # e.g., 'Python', 'SQL', 'UI Design'
+    resource_type = models.CharField(max_length=20, choices=(('VIDEO', 'Video'), ('DOC', 'Documentation'), ('COURSE', 'Course')))
+    trait_alignment = models.CharField(max_length=1) # RIASEC Type (R, I, A, etc.)
+
+    def __str__(self):
+        return self.title

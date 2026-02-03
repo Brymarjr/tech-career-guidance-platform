@@ -29,3 +29,23 @@ class SubmitAssessmentView(APIView):
             "top_trait": top_trait,
             "message": "Assessment processed successfully!"
         }, status=status.HTTP_201_CREATED)
+        
+        
+class DashboardSummaryView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        latest_result = AssessmentResult.objects.filter(user=request.user).order_by('-created_at').first()
+        
+        roadmap = None
+        if latest_result:
+            roadmap = RIASECService.get_roadmap_data(latest_result.top_trait)
+
+        return Response({
+            "user": { "username": request.user.username, "role": request.user.role },
+            "assessment": {
+                "top_trait": latest_result.top_trait if latest_result else None,
+                "scores": latest_result.scores if latest_result else None,
+            },
+            "roadmap": roadmap # Now includes the mapped path
+        })
