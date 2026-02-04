@@ -9,8 +9,10 @@ import {
   User, LogOut, Target, Sparkles, TrendingUp, X, ExternalLink, CheckCircle2, Send
 } from "lucide-react";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 export default function Dashboard() {
+  const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [chartData, setChartData] = useState<any>([]);
   const [selectedMilestone, setSelectedMilestone] = useState<any>(null);
@@ -67,7 +69,7 @@ export default function Dashboard() {
     }
   };
 
-const handleSendMessage = async (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
 
@@ -78,14 +80,9 @@ const handleSendMessage = async (e: React.FormEvent) => {
 
     try {
       const res = await api.post("assessments/chat/", { message: chatInput });
-      
-      // Even if it's a "Quota Full" message from our backend, 
-      // it will arrive here and be displayed in the chat bubbles.
       setMessages(prev => [...prev, { role: 'assistant', content: res.data.response }]);
-      
     } catch (err: any) {
-      // This will now only trigger if the server is actually DOWN (500 error)
-      toast.error("The Mentor service is currently offline.");
+      toast.error("AI Mentor is currently unavailable.");
     } finally {
       setIsTyping(false);
     }
@@ -114,14 +111,31 @@ const handleSendMessage = async (e: React.FormEvent) => {
         </div>
         
         <nav className="space-y-3 flex-1">
-          <motion.div whileHover={{ x: 5 }} className="flex items-center gap-4 p-4 bg-indigo-50 text-[#3730A3] rounded-2xl font-black shadow-sm cursor-pointer">
+          <motion.div 
+            whileHover={{ x: 5 }} 
+            className="flex items-center gap-4 p-4 bg-indigo-50 text-[#3730A3] rounded-2xl font-black shadow-sm cursor-pointer"
+          >
             <LayoutDashboard size={22} /> Dashboard
           </motion.div>
-          <motion.div whileHover={{ x: 5 }} className="flex items-center gap-4 p-4 text-gray-400 hover:text-[#3730A3] hover:bg-gray-50 rounded-2xl font-bold transition-all cursor-pointer">
+          <motion.div 
+            whileHover={{ x: 5 }} 
+            className="flex items-center gap-4 p-4 text-gray-400 hover:text-[#3730A3] hover:bg-gray-50 rounded-2xl font-bold transition-all cursor-pointer"
+          >
             <Award size={22} /> Career Roadmap
           </motion.div>
-          <motion.div whileHover={{ x: 5 }} className="flex items-center gap-4 p-4 text-gray-400 hover:text-[#3730A3] hover:bg-gray-50 rounded-2xl font-bold transition-all cursor-pointer">
+          <motion.div 
+            whileHover={{ x: 5 }} 
+            className="flex items-center gap-4 p-4 text-gray-400 hover:text-[#3730A3] hover:bg-gray-50 rounded-2xl font-bold transition-all cursor-pointer"
+          >
             <BookOpen size={22} /> Learning Library
+          </motion.div>
+          {/* Phase 5: Settings Link RESTORED */}
+          <motion.div 
+            whileHover={{ x: 5 }} 
+            onClick={() => router.push("/dashboard/settings")}
+            className="flex items-center gap-4 p-4 text-gray-400 hover:text-[#3730A3] hover:bg-gray-50 rounded-2xl font-bold transition-all cursor-pointer"
+          >
+            <User size={22} /> Profile Settings
           </motion.div>
         </nav>
 
@@ -140,7 +154,10 @@ const handleSendMessage = async (e: React.FormEvent) => {
             <p className="text-[#6B7280] text-xl font-medium">Your <span className="text-[#3730A3] font-bold">{data.roadmap?.title}</span> is looking strong today.</p>
           </motion.div>
           
-          <div className="flex items-center gap-5 bg-white p-4 pr-10 rounded-[2rem] shadow-xl border border-gray-50 hover:shadow-2xl transition-shadow cursor-pointer group">
+          <div 
+            onClick={() => router.push("/dashboard/settings")}
+            className="flex items-center gap-5 bg-white p-4 pr-10 rounded-[2rem] shadow-xl border border-gray-50 hover:shadow-2xl transition-shadow cursor-pointer group"
+          >
             <div className="w-14 h-14 bg-gradient-to-tr from-[#3730A3] to-[#10B981] rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg group-hover:rotate-6 transition-transform">
               {data.user.username[0].toUpperCase()}
             </div>

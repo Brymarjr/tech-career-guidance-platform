@@ -157,3 +157,18 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
+
+# Email Configuration
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+
+# Explicitly matching your .env variable names
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER') 
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_PASSWORD') 
+
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+# Timeout settings to ensure the "under 5 seconds" metric in your SRS
+EMAIL_TIMEOUT = 10
