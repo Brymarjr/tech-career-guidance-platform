@@ -4,6 +4,7 @@ from django.db import models
 from django.conf import settings
 from django.utils import timezone
 import datetime
+from django.db.models import Avg
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, username, password=None, **extra_fields):
@@ -33,8 +34,9 @@ class CustomUser(AbstractUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(unique=True)
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='STUDENT')
-    full_name = models.CharField(max_length=255, blank=True) 
+    full_name = models.CharField(max_length=255, blank=True, null=True) 
     bio = models.TextField(max_length=500, blank=True) 
+    expertise = models.CharField(max_length=255, blank=True, null=True)
     skills = models.CharField(max_length=255, blank=True)  
     career_interest = models.CharField(max_length=255, blank=True) 
     job_title = models.CharField(max_length=100, blank=True)
@@ -46,6 +48,12 @@ class CustomUser(AbstractUser):
 
     USERNAME_FIELD = 'username'
     REQUIRED_FIELDS = ['email']
+    
+    @property
+    def average_rating(self):
+        # Calculates rating from real student feedback
+        avg = self.received_feedbacks.aggregate(Avg('rating'))['rating__avg']
+        return round(avg, 1) if avg else 0.0
 
     def __str__(self):
         return f"{self.email} ({self.role})"
@@ -90,5 +98,15 @@ class PasswordResetOTP(models.Model):
     is_verified = models.BooleanField(default=False)
 
     def is_expired(self):
-        # Per SRS: Metrics require quick completion. OTP valid for 10 mins [cite: 52]
+        # Per SRS: Metrics require quick completion. OTP valid for 10 mins 
         return timezone.now() > self.created_at + datetime.timedelta(minutes=10)
+    
+    
+class Notification(models.Model):
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='notifications')
+    message = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Note for {self.recipient.username}: {self.message[:20]}"

@@ -16,3 +16,15 @@ class UserSerializer(serializers.ModelSerializer):
             user.set_password(password)
             user.save()
         return user
+    
+    
+class MentorPublicSerializer(serializers.ModelSerializer):
+    rating = serializers.ReadOnlyField(source='average_rating')
+
+    class Meta:
+        model = CustomUser
+        fields = [
+            'id', 'username', 'email', 'full_name', 
+            'bio', 'expertise', 'job_title', 'company', 
+            'years_of_experience', 'rating'
+        ]
