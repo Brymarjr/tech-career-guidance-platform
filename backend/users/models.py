@@ -33,18 +33,53 @@ class CustomUser(AbstractUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(unique=True)
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='STUDENT')
-    full_name = models.CharField(max_length=255, blank=True) # 
-    bio = models.TextField(max_length=500, blank=True) # 
-    skills = models.CharField(max_length=255, blank=True) # 
-    career_interest = models.CharField(max_length=255, blank=True) # 
+    full_name = models.CharField(max_length=255, blank=True) 
+    bio = models.TextField(max_length=500, blank=True) 
+    skills = models.CharField(max_length=255, blank=True)  
+    career_interest = models.CharField(max_length=255, blank=True) 
+    job_title = models.CharField(max_length=100, blank=True)
+    company = models.CharField(max_length=100, blank=True)
+    years_of_experience = models.PositiveIntegerField(default=0)
+    is_available = models.BooleanField(default=True)
 
     objects = CustomUserManager()
 
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username']
+    USERNAME_FIELD = 'username'
+    REQUIRED_FIELDS = ['email']
 
     def __str__(self):
         return f"{self.email} ({self.role})"
+    
+    
+class MentorshipConnection(models.Model):
+    STATUS_CHOICES = (
+        ('PENDING', 'Pending'),
+        ('ACCEPTED', 'Accepted'),
+        ('DECLINED', 'Declined'),
+    )
+
+    # The student requesting help
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        related_name='sent_requests', 
+        on_delete=models.CASCADE
+    )
+    # The mentor receiving the request
+    mentor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        related_name='received_requests', 
+        on_delete=models.CASCADE
+    )
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
+    message = models.TextField(blank=True) # Student's introductory note
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Prevent duplicate requests to the same mentor
+        unique_together = ('student', 'mentor')
+
+    def __str__(self):
+        return f"{self.student.username} -> {self.mentor.username} ({self.status})"
     
     
 class PasswordResetOTP(models.Model):
