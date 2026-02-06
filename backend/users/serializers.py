@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser
+from .models import CustomUser, Thread, Message
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -28,3 +28,65 @@ class MentorPublicSerializer(serializers.ModelSerializer):
             'bio', 'expertise', 'job_title', 'company', 
             'years_of_experience', 'rating'
         ]
+        
+        
+class MessageSerializer(serializers.ModelSerializer):
+    sender_username = serializers.ReadOnlyField(source='sender.username')
+
+    class Meta:
+        model = Message
+        fields = ['id', 'thread', 'sender', 'sender_username', 'content', 'is_read', 'created_at']
+        read_only_fields = ['sender', 'thread', 'is_read']
+
+
+class ThreadSerializer(serializers.ModelSerializer):
+    other_user = serializers.SerializerMethodField()
+    last_message = serializers.SerializerMethodField()
+    unread_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Thread
+        fields = ['id', 'other_user', 'last_message', 'unread_count', 'updated_at']
+        
+    def get_unread_count(self, obj):
+        request_user = self.context['request'].user
+        # Count messages where the requester is NOT the sender and is_read is False
+        return obj.messages.filter(is_read=False).exclude(sender=request_user).count()
+
+    def get_other_user(self, obj):
+        request_user = self.context['request'].user
+        other = obj.mentor if obj.student == request_user else obj.student
+        
+        # PRO-FIX: Bypass all pre-fetching. Query the DB directly for THIS user.
+        from django.utils import timezone
+        import datetime
+        from .models import CustomUser
+
+        # Fetch the very latest activity directly from the table
+        latest_data = CustomUser.objects.filter(id=other.id).values('last_activity').first()
+        actual_last_activity = latest_data['last_activity'] if latest_data else None
+
+        is_online = False
+        if actual_last_activity:
+            # If active in the last 2 minutes, show as online
+            is_online = timezone.now() < actual_last_activity + datetime.timedelta(minutes=2)
+
+        return {
+            "id": str(other.id),
+            "username": other.username,
+            "full_name": other.full_name,
+            "role": other.role,
+            "is_online": is_online,
+            "last_seen": actual_last_activity # This is now the raw DB value
+        }
+
+    def get_last_message(self, obj):
+        last_msg = obj.messages.last()
+        if last_msg:
+            return {
+                "content": last_msg.content[:50],
+                "created_at": last_msg.created_at,
+                "is_read": last_msg.is_read,
+                "sender_id": str(last_msg.sender.id)
+            }
+        return None

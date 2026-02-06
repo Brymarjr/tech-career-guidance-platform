@@ -11,7 +11,8 @@ from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.conf import settings
 from django.db import connection
-from django.db.models import Count, Avg
+from django.db.models import Count, Avg, Q
+from django.shortcuts import get_object_or_404
 
 from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
@@ -19,8 +20,9 @@ from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .serializers import UserSerializer, MentorPublicSerializer
-from .models import CustomUser, PasswordResetOTP, MentorshipConnection, Notification
+from .serializers import UserSerializer, MentorPublicSerializer, ThreadSerializer, MessageSerializer
+from .models import CustomUser, PasswordResetOTP, MentorshipConnection, Notification, Thread, Message
+
 
 User = get_user_model()
 
@@ -183,12 +185,14 @@ class MentorListView(generics.ListAPIView):
     def get_queryset(self):
         return CustomUser.objects.filter(role='MENTOR', is_available=True)
 
+
 class MentorDashboardView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         if request.user.role != 'MENTOR':
             return Response({"error": "Unauthorized access."}, status=403)
+        
         requests = MentorshipConnection.objects.filter(mentor=request.user).order_by('-created_at')
         data = [{
             "id": r.id,
@@ -203,22 +207,42 @@ class MentorDashboardView(APIView):
     def patch(self, request, pk):
         try:
             connection = MentorshipConnection.objects.get(id=pk, mentor=request.user)
-            new_status = request.data.get('status')
+            new_status = request.data.get('status') # 'ACCEPTED' or 'DECLINED'
+            
             if new_status in ['ACCEPTED', 'DECLINED']:
                 connection.status = new_status
                 connection.save()
 
-                # NEW: Create notification for the student
-                from .models import Notification
+                # --- PRO LEVEL: Thread & Notification Logic ---
+                from .models import Thread, Notification
+
+                # 1. Automatic Thread Creation (Only if Accepted)
+                if new_status == 'ACCEPTED':
+                    Thread.objects.get_or_create(
+                        student=connection.student,
+                        mentor=connection.mentor
+                    )
+
+                # 2. ALWAYS Notify the Student of the outcome
                 Notification.objects.create(
                     recipient=connection.student,
-                    message=f"Mentor {request.user.username} has {new_status.lower()} your mentorship request."
+                    message=f"Mentor {request.user.username} has {new_status.lower()} your request."
                 )
+                # ----------------------------------------------
 
-                return Response({"message": f"Request {new_status.lower()} successfully."})
+                return Response({
+                    "message": f"Request {new_status.lower()} successfully.",
+                    "status": new_status,
+                    "updated_at": timezone.now()
+                })
+            
             return Response({"error": "Invalid status."}, status=400)
+            
         except MentorshipConnection.DoesNotExist:
             return Response({"error": "Request not found."}, status=404)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
 
 class ConnectionRequestView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -241,10 +265,10 @@ class ConnectionRequestView(APIView):
                 if connection.status == 'DECLINED':
                     connection.status = 'PENDING'
                     connection.message = message
+                    # We save to trigger the updated_at timestamp
                     connection.save()
                     
-                    # NOTIFY MENTOR: About the re-sent request
-                    from .models import Notification
+                    # TRIGGER: Notify Mentor of Re-sent request
                     Notification.objects.create(
                         recipient=mentor,
                         message=f"{request.user.username} has re-sent their mentorship request."
@@ -263,8 +287,7 @@ class ConnectionRequestView(APIView):
                 status='PENDING'
             )
 
-            # NOTIFY MENTOR: About the new request
-            from .models import Notification
+            # TRIGGER: Notify Mentor of New request
             Notification.objects.create(
                 recipient=mentor,
                 message=f"New mentorship request from {request.user.username}."
@@ -274,18 +297,20 @@ class ConnectionRequestView(APIView):
             
         except CustomUser.DoesNotExist:
             return Response({"error": "Mentor not found."}, status=404)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
 
 class StudentRequestHistoryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        requests = MentorshipConnection.objects.filter(student=request.user).order_by('-created_at')
+        requests = MentorshipConnection.objects.filter(student=request.user).order_by('-updated_at')
         data = [{
             "id": r.id,
             "mentor_name": r.mentor.username,
             "status": r.status,
             "message": r.message,
-            "date": r.created_at.strftime('%Y-%m-%d')
+            "date": r.updated_at.strftime('%Y-%m-%d')
         } for r in requests]
         return Response(data)
 
@@ -452,3 +477,53 @@ class NotificationView(APIView):
             # Mark ALL as read
             Notification.objects.filter(recipient=request.user).update(is_read=True)
         return Response({"status": "read"})
+    
+    
+class ThreadListView(APIView):
+    """
+    Returns a list of all conversations for the logged-in user.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        threads = Thread.objects.filter(
+            Q(student=request.user) | Q(mentor=request.user)
+        ).order_by('-updated_at')
+        serializer = ThreadSerializer(threads, many=True, context={'request': request})
+        return Response(serializer.data)
+
+
+class MessageView(APIView):
+    """
+    Handles retrieving and sending messages in a specific thread.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, thread_id):
+        thread = get_object_or_404(Thread, id=thread_id)
+        
+        # Security Guard: Ensure user belongs to this thread
+        if request.user != thread.student and request.user != thread.mentor:
+            return Response({"error": "Unauthorized"}, status=403)
+            
+        messages = thread.messages.all().order_by('created_at')
+        
+        # Pro-Level: Mark unread messages as read when opened
+        thread.messages.filter(~Q(sender=request.user), is_read=False).update(is_read=True)
+        
+        serializer = MessageSerializer(messages, many=True)
+        return Response(serializer.data)
+
+    def post(self, request, thread_id):
+        thread = get_object_or_404(Thread, id=thread_id)
+        
+        if request.user != thread.student and request.user != thread.mentor:
+            return Response({"error": "Unauthorized"}, status=403)
+
+        serializer = MessageSerializer(data=request.data)
+        if serializer.is_valid():
+            # Save message and update the thread's 'updated_at' for sorting
+            serializer.save(sender=request.user, thread=thread)
+            thread.save() 
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)

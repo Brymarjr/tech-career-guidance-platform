@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer, PolarRadiusAxis } from "recharts";
 import { 
   LayoutDashboard, Award, BookOpen, ChevronRight, 
-  User, LogOut, Target, Sparkles, TrendingUp, X, ExternalLink, CheckCircle2, Send, Settings, Moon, Sun
+  User, LogOut, Target, Sparkles, TrendingUp, X, ExternalLink, CheckCircle2, Send, Settings, Moon, Sun, MessageSquare
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -24,6 +24,7 @@ export default function Dashboard() {
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<any[]>([]);
   const [isTyping, setIsTyping] = useState(false);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const fetchDashboard = async () => {
@@ -46,6 +47,12 @@ export default function Dashboard() {
         }));
         setChartData(formatted);
       }
+      
+      // Fetch unread messages count
+      const threadsRes = await api.get("users/threads/");
+      const totalUnread = threadsRes.data.reduce((acc: number, t: any) => acc + (t.unread_count || 0), 0);
+      setUnreadMessages(totalUnread);
+
     } catch (err: any) {
       if (err.response?.status !== 401 && localStorage.getItem('access_token')) {
         console.error("Dashboard load failed", err);
@@ -61,6 +68,9 @@ export default function Dashboard() {
     }
     if (user && user.loggedIn) {
       fetchDashboard();
+      // Poll unread count every 30 seconds
+      const interval = setInterval(fetchDashboard, 30000);
+      return () => clearInterval(interval);
     }
   }, [user]);
 
@@ -116,12 +126,28 @@ export default function Dashboard() {
         </div>
         
         <nav className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-          <motion.div whileHover={{ x: 5 }} className="flex items-center gap-4 p-4 bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400 rounded-2xl font-black shadow-sm cursor-pointer">
+          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard")} className="flex items-center gap-4 p-4 bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400 rounded-2xl font-black shadow-sm cursor-pointer">
             <LayoutDashboard size={22} /> Dashboard
           </motion.div>
           <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/mentors")} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer">
             <Target size={22} /> Find Mentors
           </motion.div>
+          
+          <motion.div 
+            whileHover={{ x: 5 }} 
+            onClick={() => router.push("/dashboard/messages")} 
+            className="flex items-center justify-between p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"
+          >
+            <div className="flex items-center gap-4">
+              <MessageSquare size={22} /> Messages
+            </div>
+            {unreadMessages > 0 && (
+              <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce font-black">
+                {unreadMessages}
+              </span>
+            )}
+          </motion.div>
+
           <motion.div whileHover={{ x: 5 }} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer">
             <Award size={22} /> Career Roadmap
           </motion.div>
@@ -142,7 +168,6 @@ export default function Dashboard() {
           </motion.div>
           
           <div className="flex items-center gap-6">
-            {/* INJECTED: Notification Bell */}
             <NotificationBell />
 
             <div className="relative">

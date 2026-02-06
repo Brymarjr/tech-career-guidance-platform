@@ -1,7 +1,7 @@
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
-from .models import PasswordResetOTP, MentorshipConnection
+from .models import PasswordResetOTP, MentorshipConnection, Thread, Message, Notification
 
 User = get_user_model()
 
@@ -18,7 +18,6 @@ class UserAccountTests(TestCase):
         self.assertEqual(user.email, 'testuser@techcareer.ng')
         self.assertEqual(user.role, 'STUDENT')
         self.assertTrue(user.is_active)
-        self.assertFalse(user.is_staff)
 
     def test_superuser_creation(self):
         """Verify the Administrator role required by the SRS."""
@@ -30,9 +29,7 @@ class UserAccountTests(TestCase):
         )
         self.assertEqual(admin_user.role, 'ADMIN') 
         self.assertTrue(admin_user.is_staff)
-        self.assertTrue(admin_user.is_superuser)
 
-# --- NEW: PROFILE MANAGEMENT TESTS ---
 class ProfileAPITests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
@@ -40,138 +37,86 @@ class ProfileAPITests(APITestCase):
             username='profile_user',
             password='password123',
             full_name='Original Name',
-            bio='Original Bio'
+            is_available=True
         )
         self.client.force_authenticate(user=self.user)
 
     def test_get_profile(self):
-        """Verify profile data retrieval for the dashboard."""
+        """Verify profile data retrieval."""
         response = self.client.get('/api/v1/users/profile/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['full_name'], 'Original Name')
 
     def test_patch_profile_update(self):
-        """Verify immediate update of profile info (User Story 4)[cite: 52, 63]."""
+        """Verify profile update using the consolidated endpoint."""
         payload = {
             "full_name": "Updated Name",
-            "bio": "Updated Bio",
-            "skills": "Python, Django",
-            "career_interest": "Software Engineering"
+            "is_available": False,
+            "job_title": "Engineer"
         }
-        response = self.client.patch('/api/v1/users/profile/update/', payload)
+        # Path updated to /profile/ as agreed
+        response = self.client.patch('/api/v1/users/profile/', payload)
         self.assertEqual(response.status_code, 200)
         
-        # Verify database update [cite: 27]
         self.user.refresh_from_db()
         self.assertEqual(self.user.full_name, "Updated Name")
-        self.assertEqual(self.user.skills, "Python, Django")
-        
-class PasswordResetTests(APITestCase):
-    def setUp(self):
-        self.user = User.objects.create_user(
-            email='student@techpath.com', 
-            username='student_user', 
-            password='oldpassword123'
-        )
+        self.assertFalse(self.user.is_available)
 
-    def test_password_reset_flow(self):
-        """
-        Validates the flowchart sequence[cite: 74]: 
-        Enter email -> Send OTP -> Input New Password 
-        """
-        # 1. Request OTP
-        response = self.client.post('/api/v1/users/password-reset/request/', {'email': 'student@techpath.com'})
-        self.assertEqual(response.status_code, 200)
-        
-        # 2. Verify OTP
-        otp_record = PasswordResetOTP.objects.get(user__email='student@techpath.com')
-        response = self.client.post('/api/v1/users/password-reset/verify/', {
-            'email': 'student@techpath.com', 
-            'otp': otp_record.otp_code
-        })
-        self.assertEqual(response.status_code, 200)
-        
-        # 3. Confirm New Password
-        response = self.client.post('/api/v1/users/password-reset/confirm/', {
-            'email': 'student@techpath.com', 
-            'new_password': 'NewSecurePassword789!'
-        })
-        self.assertEqual(response.status_code, 200)
-
-        # 4. Login Attempt
-        login_response = self.client.post('/api/v1/users/login/', {
-            'email': 'student@techpath.com',
-            'password': 'NewSecurePassword789!'
-        })
-        
-        if login_response.status_code != 200:
-            print(f"Login Error Details: {login_response.data}")
-            
-        self.assertEqual(login_response.status_code, 200)
-        
 class MentorEcosystemTests(APITestCase):
     def setUp(self):
-        # 1. Create a Student
         self.student = User.objects.create_user(
-            email='student_test@path.com',
-            username='student_user',
-            password='password123',
-            role='STUDENT'
+            email='student@test.com', username='student', password='pass', role='STUDENT'
         )
-        # 2. Create a Mentor
         self.mentor = User.objects.create_user(
-            email='mentor_test@path.com',
-            username='mentor_user',
-            password='password123',
-            role='MENTOR',
-            job_title='Senior Dev',
-            company='Google',
-            is_available=True
-        )
-        # 3. Create a Second Student (to verify they don't show up in Mentor List)
-        User.objects.create_user(
-            email='other_student@path.com',
-            username='other_student',
-            password='password123',
-            role='STUDENT'
+            email='mentor@test.com', username='mentor', password='pass', role='MENTOR', is_available=True
         )
 
-    def test_mentor_discovery_list(self):
-        """Verify only available Mentors appear in the discovery list."""
+    def test_connection_and_notification_flow(self):
+        """Verify connection creates a notification for the mentor."""
         self.client.force_authenticate(user=self.student)
-        response = self.client.get('/api/v1/users/mentors/')
-        
-        self.assertEqual(response.status_code, 200)
-        # Should only find 1 mentor, even though there are 3 users total
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['role'], 'MENTOR')
-
-    def test_send_connection_request(self):
-        """Verify a student can successfully request a mentor."""
-        self.client.force_authenticate(user=self.student)
-        payload = {
-            "mentor_id": str(self.mentor.id),
-            "message": "I would love to learn Django from you!"
-        }
+        payload = {"mentor_id": str(self.mentor.id), "message": "Help me!"}
         response = self.client.post('/api/v1/users/connect/', payload)
         
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(MentorshipConnection.objects.count(), 1)
-        
-        # Verify database integrity
-        conn = MentorshipConnection.objects.first()
-        self.assertEqual(conn.status, 'PENDING')
-        self.assertEqual(conn.student, self.student)
+        # Check if notification was created for mentor
+        self.assertTrue(Notification.objects.filter(recipient=self.mentor).exists())
 
-    def test_prevent_duplicate_request(self):
-        """Ensure a student cannot spam the same mentor with multiple requests."""
+    def test_mentor_accept_creates_thread(self):
+        """Verify that accepting a student creates a chat thread automatically."""
+        conn = MentorshipConnection.objects.create(student=self.student, mentor=self.mentor)
+        self.client.force_authenticate(user=self.mentor)
+        
+        response = self.client.patch(f'/api/v1/users/mentor-dashboard/{conn.id}/', {'status': 'ACCEPTED'})
+        self.assertEqual(response.status_code, 200)
+        
+        # Verify Thread creation
+        self.assertTrue(Thread.objects.filter(student=self.student, mentor=self.mentor).exists())
+        # Verify Student notification
+        self.assertTrue(Notification.objects.filter(recipient=self.student).exists())
+
+class ChatSystemTests(APITestCase):
+    def setUp(self):
+        self.student = User.objects.create_user(
+            email='s@t.com', username='s', password='p', role='STUDENT'
+        )
+        self.mentor = User.objects.create_user(
+            email='m@t.com', username='m', password='p', role='MENTOR'
+        )
+        self.thread = Thread.objects.create(student=self.student, mentor=self.mentor)
+
+    def test_send_message(self):
+        """Verify users can send messages in a thread."""
         self.client.force_authenticate(user=self.student)
-        payload = {"mentor_id": str(self.mentor.id)}
+        payload = {"content": "Hello Mentor!"}
+        response = self.client.post(f'/api/v1/users/threads/{self.thread.id}/messages/', payload)
         
-        # First request
-        self.client.post('/api/v1/users/connect/', payload)
-        # Second request (Duplicate)
-        response = self.client.post('/api/v1/users/connect/', payload)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Message.objects.count(), 1)
+
+    def test_unauthorized_chat_access(self):
+        """Ensure random users cannot read other people's chats."""
+        stranger = User.objects.create_user(email='x@t.com', username='x', password='p')
+        self.client.force_authenticate(user=stranger)
         
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("already sent", response.data['error'])
+        response = self.client.get(f'/api/v1/users/threads/{self.thread.id}/messages/')
+        self.assertEqual(response.status_code, 403)

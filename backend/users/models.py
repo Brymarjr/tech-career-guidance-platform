@@ -43,6 +43,7 @@ class CustomUser(AbstractUser):
     company = models.CharField(max_length=100, blank=True)
     years_of_experience = models.PositiveIntegerField(default=0)
     is_available = models.BooleanField(default=True)
+    last_activity = models.DateTimeField(null=True, blank=True)
 
     objects = CustomUserManager()
 
@@ -54,6 +55,13 @@ class CustomUser(AbstractUser):
         # Calculates rating from real student feedback
         avg = self.received_feedbacks.aggregate(Avg('rating'))['rating__avg']
         return round(avg, 1) if avg else 0.0
+    
+    @property
+    def is_online(self):
+        if self.last_activity:
+            # If the user was active in the last 5 minutes, consider them online
+            return timezone.now() < self.last_activity + datetime.timedelta(minutes=5)
+        return False
 
     def __str__(self):
         return f"{self.email} ({self.role})"
@@ -81,6 +89,7 @@ class MentorshipConnection(models.Model):
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
     message = models.TextField(blank=True) # Student's introductory note
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         # Prevent duplicate requests to the same mentor
@@ -110,3 +119,47 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"Note for {self.recipient.username}: {self.message[:20]}"
+    
+    
+class Thread(models.Model):
+    """
+    Acts as a conversation container between a student and a mentor.
+    """
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='student_threads'
+    )
+    mentor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='mentor_threads'
+    )
+    # Useful for sorting the inbox by the most recent activity
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # A student and mentor should only ever have ONE thread together
+        unique_together = ('student', 'mentor')
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"Chat: {self.student.username} & {self.mentor.username}"
+
+
+class Message(models.Model):
+    """
+    A single message within a Thread.
+    """
+    thread = models.ForeignKey(Thread, on_delete=models.CASCADE, related_name='messages')
+    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    content = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"From {self.sender.username} at {self.created_at}"

@@ -13,6 +13,7 @@ export default function MentorDashboard() {
   const { logout, user, isDarkMode, toggleTheme } = useAuth(); 
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const router = useRouter();
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -24,12 +25,18 @@ export default function MentorDashboard() {
     try {
       const res = await api.get("users/mentor-dashboard/");
       setRequests(res.data);
+
+      // Fetch unread messages count
+      const threadsRes = await api.get("users/threads/");
+      const totalUnread = threadsRes.data.reduce((acc: number, t: any) => acc + (t.unread_count || 0), 0);
+      setUnreadMessages(totalUnread);
+
     } catch (err: any) {
       if (err.response?.status === 403) {
         toast.error("Access Denied: Mentors Only");
         router.push("/dashboard");
       } else if (err.response?.status !== 401 && localStorage.getItem('access_token')) {
-        toast.error("Failed to load student requests.");
+        toast.error("Failed to load dashboard data.");
       }
     } finally {
       setLoading(false);
@@ -44,6 +51,9 @@ export default function MentorDashboard() {
     
     if (user && user.loggedIn) {
       fetchRequests();
+      // Poll every 30 seconds
+      const interval = setInterval(fetchRequests, 30000);
+      return () => clearInterval(interval);
     }
   }, [user]);
 
@@ -80,11 +90,25 @@ export default function MentorDashboard() {
         </div>
         
         <nav className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-          <motion.div whileHover={{ x: 5 }} className="flex items-center gap-4 p-4 bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400 rounded-2xl font-black shadow-sm cursor-pointer">
+          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/mentor/dashboard")} className="flex items-center gap-4 p-4 bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400 rounded-2xl font-black shadow-sm cursor-pointer">
             <LayoutDashboard size={22} /> Student Requests
           </motion.div>
           
-          {/* FIX: Sidebar Naming updated to Profile Settings */}
+          <motion.div 
+            whileHover={{ x: 5 }} 
+            onClick={() => router.push("/dashboard/messages")}
+            className="flex items-center justify-between p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"
+          >
+            <div className="flex items-center gap-4">
+              <MessageSquare size={22} /> Messages
+            </div>
+            {unreadMessages > 0 && (
+              <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce font-black">
+                {unreadMessages}
+              </span>
+            )}
+          </motion.div>
+
           <motion.div 
             whileHover={{ x: 5 }} 
             onClick={() => router.push("/dashboard/settings")}

@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
-from .views import LoginView, RegisterView, RequestPasswordResetView, VerifyOTPView, ConfirmPasswordResetView, ProfileView, MentorListView, ConnectionRequestView,MentorDashboardView, AdminGlobalStatsView, AdminUserManagementView, ExportAuditLogView, SystemHealthView, StudentRequestHistoryView, StudentNotificationView, MentorNotificationView, NotificationView
+from .views import LoginView, RegisterView, RequestPasswordResetView, VerifyOTPView, ConfirmPasswordResetView, ProfileView, MentorListView, ConnectionRequestView,MentorDashboardView, AdminGlobalStatsView, AdminUserManagementView, ExportAuditLogView, SystemHealthView, StudentRequestHistoryView, StudentNotificationView, MentorNotificationView, NotificationView, ThreadListView, MessageView
 
 urlpatterns = [
     
@@ -25,5 +25,7 @@ urlpatterns = [
     path('mentor-notifications/', MentorNotificationView.as_view(), name='mentor-notifications'),
     path('notifications/', NotificationView.as_view(), name='notifications-list'),
     path('notifications/<int:pk>/', NotificationView.as_view(), name='notification-detail'),
+    path('threads/', ThreadListView.as_view(), name='thread-list'),
+    path('threads/<int:thread_id>/messages/', MessageView.as_view(), name='thread-messages'),
     
 ]
