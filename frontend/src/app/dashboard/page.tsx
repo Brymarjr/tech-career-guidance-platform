@@ -6,12 +6,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer, PolarRadiusAxis } from "recharts";
 import { 
   LayoutDashboard, Award, BookOpen, ChevronRight, 
-  User, LogOut, Target, Sparkles, TrendingUp, X, ExternalLink, CheckCircle2, Send, Settings, Moon, Sun, MessageSquare, Link, ClipboardList, Loader2
+  User, LogOut, Target, Sparkles, TrendingUp, X, ExternalLink, CheckCircle2, Send, Settings, Moon, Sun, MessageSquare, Link, ClipboardList, Loader2, Trophy
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import NotificationBell from "@/components/NotificationBell";
+import BadgeIcon from "@/components/BadgeIcon"; // Ensure this path is correct
 
 export default function Dashboard() {
   const router = useRouter();
@@ -71,11 +72,40 @@ export default function Dashboard() {
     }
   }, [user]);
 
+  // NEW: CELEBRATION TOAST LOGIC
+  useEffect(() => {
+    if (data?.new_achievements?.length > 0) {
+      data.new_achievements.forEach((item: any) => {
+        toast.custom((t) => (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.8, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-white dark:bg-[#1E293B] border-2 border-amber-400 p-6 rounded-[2.5rem] shadow-2xl flex items-center gap-6 min-w-[350px] z-[9999]"
+          >
+            <div className="w-16 h-16 bg-amber-50 dark:bg-amber-900/30 rounded-2xl flex items-center justify-center text-amber-500 shadow-inner">
+              <BadgeIcon name={item.achievement.badge_icon} size={32} />
+            </div>
+            <div className="flex-1">
+              <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">New Achievement!</p>
+              <h4 className="text-lg font-black dark:text-white leading-none">{item.achievement.title}</h4>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-medium">{item.achievement.description}</p>
+            </div>
+            <button onClick={() => toast.dismiss(t)} className="text-gray-300 hover:text-gray-500 transition-colors">
+              <X size={20} />
+            </button>
+          </motion.div>
+        ), { 
+          duration: 5000,
+          position: 'top-center' 
+        });
+      });
+    }
+  }, [data?.new_achievements]);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  // AI MENTOR CHAT LOGIC
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
@@ -143,12 +173,19 @@ export default function Dashboard() {
           
           <motion.div 
             whileHover={{ x: 5 }} 
+            onClick={() => router.push("/dashboard/achievements")} 
+            className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"
+          >
+            <Trophy size={22} /> My Achievements
+          </motion.div>
+
+          <motion.div 
+            whileHover={{ x: 5 }} 
             onClick={() => router.push("/dashboard/library")}
             className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"
           >
             <BookOpen size={22} /> Learning Library
           </motion.div>
-          {/* REMOVED: Profile Settings from Sidebar as requested */}
         </nav>
       </aside>
 
@@ -235,6 +272,44 @@ export default function Dashboard() {
                 </p>
               </div>
             </motion.div>
+
+            {/* ACHIEVEMENTS SECTION */}
+            <div className="bg-white dark:bg-[#1E293B] p-10 rounded-[3.5rem] border border-gray-100 dark:border-slate-800 shadow-xl relative overflow-hidden">
+              <div className="flex justify-between items-center mb-8">
+                <h3 className="text-xl font-black dark:text-white flex items-center gap-3">
+                  <Trophy className="text-amber-500" size={24} /> Achievements
+                </h3>
+                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 dark:bg-slate-800 px-3 py-1 rounded-full">
+                  {data.achievements?.length || 0} Unlocked
+                </span>
+              </div>
+
+              <div className="flex flex-wrap gap-4">
+                {data.achievements && data.achievements.length > 0 ? (
+                  data.achievements.map((item: any, idx: number) => (
+                    <motion.div 
+                      key={item.id || idx}
+                      whileHover={{ scale: 1.1, rotate: 5 }}
+                      className="group relative"
+                    >
+                      <div className="w-16 h-16 bg-amber-50 dark:bg-amber-900/20 rounded-2xl flex items-center justify-center text-amber-600 border border-amber-100 dark:border-amber-900/30 shadow-sm transition-all hover:shadow-amber-200/50">
+                        <BadgeIcon name={item.achievement.badge_icon} size={28} />
+                      </div>
+                      
+                      {/* Tooltip */}
+                      <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 w-40 p-3 bg-[#111827] text-white text-[10px] rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-2xl z-50 text-center">
+                        <p className="font-black mb-1">{item.achievement.title}</p>
+                        <p className="text-gray-400 font-medium leading-tight">{item.achievement.description}</p>
+                      </div>
+                    </motion.div>
+                  ))
+                ) : (
+                  <div className="w-full py-6 text-center border-2 border-dashed border-gray-100 dark:border-slate-800 rounded-[2rem]">
+                    <p className="text-gray-400 font-bold italic text-sm">Complete milestones to earn badges!</p>
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="bg-white dark:bg-[#1E293B] p-12 rounded-[3.5rem] border border-gray-100 dark:border-slate-800 shadow-xl relative overflow-hidden">
               <div className="flex items-center justify-between mb-8">

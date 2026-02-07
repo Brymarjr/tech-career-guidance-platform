@@ -163,21 +163,38 @@ class SubmitAssessmentView(APIView):
         
         return Response({"top_trait": primary_trait, "scores": scores, "code": blended_code}, status=status.HTTP_201_CREATED)
 
+
 class DashboardSummaryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         roadmap_data = get_user_roadmap_context(request.user)
-        # Corrected: Explicitly filter by user field
         latest_result = AssessmentResult.objects.filter(user=request.user).order_by('-created_at').first()
+        
+        from .models import UserAchievement
+        from .serializers import UserAchievementSerializer
+        
+        # 1. Fetch all achievements for the list
+        all_earned = UserAchievement.objects.filter(user=request.user).select_related('achievement')
+        
+        # 2. Identify achievements the user hasn't been notified about yet
+        new_achievements = all_earned.filter(is_notified=False)
+        new_serialized = UserAchievementSerializer(new_achievements, many=True).data
+        
+        # 3. Mark them as notified so they don't pop up again
+        new_achievements.update(is_notified=True)
+
         return Response({
             "user": {"username": request.user.username, "role": request.user.role},
             "assessment": {
                 "top_trait": latest_result.top_trait if latest_result else None,
                 "scores": latest_result.scores if latest_result else None,
             },
-            "roadmap": roadmap_data
+            "roadmap": roadmap_data,
+            "achievements": UserAchievementSerializer(all_earned, many=True).data,
+            "new_achievements": new_serialized # This triggers the toast
         })
+
 
 class ToggleMilestoneView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -317,3 +334,25 @@ class StudentLibraryView(APIView):
             "path_title": active_path.title,
             "resources": serializer.data
         })
+        
+        
+class AchievementListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .models import Achievement, UserAchievement
+        from .serializers import AchievementSerializer
+        
+        # Get all possible achievements
+        all_achievements = Achievement.objects.all()
+        # Get the IDs of achievements this user has earned
+        earned_ids = UserAchievement.objects.filter(user=request.user).values_list('achievement_id', flat=True)
+        
+        serializer = AchievementSerializer(all_achievements, many=True)
+        
+        # We add an 'is_earned' flag to each achievement for the frontend
+        data = serializer.data
+        for item in data:
+            item['is_earned'] = item['id'] in earned_ids
+            
+        return Response(data)

@@ -119,3 +119,25 @@ class ChatMessage(models.Model):
 
     class Meta:
         ordering = ['created_at']
+        
+        
+class Achievement(models.Model):
+    title = models.CharField(max_length=100)
+    description = models.TextField()
+    badge_icon = models.CharField(max_length=50, help_text="Lucide icon name (e.g., Trophy, Star, Shield)")
+    points = models.IntegerField(default=10)
+    # Allows us to tie badges to specific paths (e.g., 'Infrastructure Master')
+    trait_requirement = models.CharField(max_length=1, blank=True, null=True) 
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.title
+
+class UserAchievement(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='earned_achievements')
+    achievement = models.ForeignKey(Achievement, on_delete=models.CASCADE)
+    earned_at = models.DateTimeField(auto_now_add=True)
+    is_notified = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = ('user', 'achievement') # Prevent duplicate badges

@@ -1,5 +1,11 @@
 from rest_framework import serializers
-from .models import Question, CareerPath, Milestone, LearningResource, UserProgress
+from .models import (
+    Question, CareerPath, Milestone, 
+    LearningResource, UserProgress, 
+    Achievement, UserAchievement
+)
+
+# --- ADMIN / MANAGEMENT SERIALIZERS ---
 
 class LearningResourceSerializer(serializers.ModelSerializer):
     class Meta:
@@ -7,17 +13,13 @@ class LearningResourceSerializer(serializers.ModelSerializer):
         fields = ['id', 'title', 'url', 'category', 'resource_type', 'trait_alignment']
 
 class MilestoneSerializer(serializers.ModelSerializer):
-    # This uses the related_name='resources' from your LearningResource model
     resources = LearningResourceSerializer(many=True, read_only=True)
-
     class Meta:
         model = Milestone
         fields = ['id', 'path', 'title', 'order', 'resources']
 
 class CareerPathSerializer(serializers.ModelSerializer):
-    # This nested serializer shows the milestones within the path
     milestones = MilestoneSerializer(many=True, read_only=True)
-
     class Meta:
         model = CareerPath
         fields = ['id', 'title', 'trait_type', 'duration', 'milestones']
@@ -26,15 +28,28 @@ class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Question
         fields = ['id', 'text', 'riasec_type', 'created_at']
-        
+
+# --- GAMIFICATION SERIALIZERS ---
+
+class AchievementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Achievement
+        fields = ['id', 'title', 'description', 'badge_icon', 'points']
+
+class UserAchievementSerializer(serializers.ModelSerializer):
+    achievement = AchievementSerializer(read_only=True)
+    class Meta:
+        model = UserAchievement
+        fields = ['achievement', 'earned_at']
+
+# --- STUDENT / DASHBOARD SERIALIZERS ---
+
 class StudentResourceSerializer(serializers.ModelSerializer):
     class Meta:
         model = LearningResource
-        # Ensure these match your LearningResource model fields
         fields = ['id', 'title', 'url', 'resource_type']
 
 class StudentMilestoneSerializer(serializers.ModelSerializer):
-    # This allows the resources to appear inside the milestone object
     resources = StudentResourceSerializer(many=True, read_only=True)
     status = serializers.SerializerMethodField()
     feedback = serializers.SerializerMethodField()
@@ -47,7 +62,6 @@ class StudentMilestoneSerializer(serializers.ModelSerializer):
         user = self.context.get('request').user
         if not user or user.is_anonymous:
             return 'LOCKED'
-        # Check the progress table for this specific user and milestone
         progress = UserProgress.objects.filter(user=user, milestone=obj).first()
         return progress.status if progress else 'IN_PROGRESS'
 
@@ -79,3 +93,9 @@ class UserRoadmapSerializer(serializers.ModelSerializer):
             status='COMPLETED'
         ).count()
         return (completed / total) * 100
+
+# FINAL SUMMARY (This is what your frontend calls)
+class DashboardSummarySerializer(serializers.Serializer):
+    roadmap = UserRoadmapSerializer(read_only=True)
+    # ADDED THIS: Now badges show up in the same API call
+    achievements = UserAchievementSerializer(many=True, read_only=True, source='earned_achievements')

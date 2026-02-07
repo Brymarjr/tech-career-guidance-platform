@@ -14,7 +14,9 @@ from .views import (
     AdminMilestoneCreateView,
     AdminMilestoneDetailView,
     AdminResourceCreateView,
-    StudentLibraryView
+    StudentLibraryView, 
+    AchievementListView,
+    
 )
 
 urlpatterns = [
@@ -47,4 +49,5 @@ urlpatterns = [
     path('admin/milestones/<int:pk>/', AdminMilestoneDetailView.as_view(), name='admin-milestone-detail'),
     path('admin/resources/', AdminResourceCreateView.as_view(), name='admin-resource-create'),
     path('library/', StudentLibraryView.as_view(), name='student-library'),
+    path('achievements-list/', AchievementListView.as_view(), name='achievements-list'),
 ]
