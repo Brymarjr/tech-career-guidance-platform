@@ -27,7 +27,7 @@ class CareerPathSerializer(serializers.ModelSerializer):
 class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Question
-        fields = ['id', 'text', 'riasec_type', 'created_at']
+        fields = ['id', 'text', 'riasec_type']
 
 # --- GAMIFICATION SERIALIZERS ---
 
@@ -70,7 +70,8 @@ class StudentMilestoneSerializer(serializers.ModelSerializer):
         if not user or user.is_anonymous:
             return None
         progress = UserProgress.objects.filter(user=user, milestone=obj).first()
-        return progress.feedback if progress else None
+        # FIXED: Use mentor_feedback which is the actual field name in models
+        return progress.mentor_feedback if progress else None
 
 class UserRoadmapSerializer(serializers.ModelSerializer):
     milestones = StudentMilestoneSerializer(many=True, read_only=True)
@@ -94,8 +95,6 @@ class UserRoadmapSerializer(serializers.ModelSerializer):
         ).count()
         return (completed / total) * 100
 
-# FINAL SUMMARY (This is what your frontend calls)
 class DashboardSummarySerializer(serializers.Serializer):
     roadmap = UserRoadmapSerializer(read_only=True)
-    # ADDED THIS: Now badges show up in the same API call
     achievements = UserAchievementSerializer(many=True, read_only=True, source='earned_achievements')

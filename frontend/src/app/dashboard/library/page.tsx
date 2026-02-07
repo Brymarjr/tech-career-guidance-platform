@@ -19,7 +19,7 @@ export default function LearningLibrary() {
   useEffect(() => {
     const fetchLibrary = async () => {
       try {
-        const res = await api.get("assessments/library/"); // This matches the view above
+        const res = await api.get("assessments/library/");
         setData(res.data);
       } catch (err) {
         toast.error("Failed to load library resources");
@@ -36,8 +36,8 @@ export default function LearningLibrary() {
     </div>
   );
 
-  const filteredResources = data?.resources?.filter((r: any) => 
-    r.title.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredResources = (data?.resources || []).filter((r: any) => 
+    (r.title || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -71,7 +71,6 @@ export default function LearningLibrary() {
         </div>
       </header>
 
-      {/* RESOURCE GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {filteredResources?.length > 0 ? (
           filteredResources.map((res: any) => (
@@ -96,7 +95,7 @@ export default function LearningLibrary() {
               </div>
 
               <h3 className="text-xl font-black text-[#1F2937] dark:text-white mb-2 leading-tight group-hover:text-indigo-600 transition-colors">
-                {res.title}
+                {res.title || res.name}
               </h3>
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 dark:bg-slate-800 px-3 py-1 rounded-full">
                 {res.resource_type}

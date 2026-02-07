@@ -26,7 +26,6 @@ export default function CareerRoadmapPage() {
       const res = await api.get("assessments/dashboard-summary/");
       setData(res.data);
       
-      // If a milestone is currently open in the drawer, update its data too
       if (selectedMilestone) {
         const updatedMilestone = res.data.roadmap.milestones.find((m: any) => m.id === selectedMilestone.id);
         if (updatedMilestone) setSelectedMilestone(updatedMilestone);
@@ -94,7 +93,6 @@ export default function CareerRoadmapPage() {
         </div>
       </header>
 
-      {/* PROGRESS TRACKER */}
       <div className="bg-white dark:bg-[#1E293B] p-10 rounded-[3rem] border border-gray-100 dark:border-slate-800 mb-12 shadow-sm">
         <div className="flex justify-between items-center mb-6">
           <h4 className="font-black text-gray-400 uppercase tracking-widest text-sm">Overall Journey Progress</h4>
@@ -109,7 +107,6 @@ export default function CareerRoadmapPage() {
         </div>
       </div>
 
-      {/* MILESTONE GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {data.roadmap?.milestones.sort((a:any, b:any) => a.order - b.order).map((step: any, index: number) => {
           const statusColors: any = {
@@ -148,12 +145,17 @@ export default function CareerRoadmapPage() {
         })}
       </div>
 
-      {/* DRAWER COMPONENT */}
       <AnimatePresence>
         {selectedMilestone && (
           <div className="fixed inset-0 z-[100] flex items-center justify-end">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedMilestone(null)} className="absolute inset-0 bg-black/40 backdrop-blur-xl" />
-            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: "spring", damping: 30 }} className="relative w-full max-w-xl h-full bg-white dark:bg-[#0F172A] p-12 flex flex-col shadow-2xl rounded-l-[4rem]">
+            <motion.div 
+              initial={{ x: '100%' }} 
+              animate={{ x: 0 }} 
+              exit={{ x: '100%' }} 
+              transition={{ type: "spring", damping: 30 }} 
+              className="relative w-full max-w-xl h-full bg-white dark:bg-[#0F172A] p-12 flex flex-col shadow-2xl rounded-l-none"
+            >
               
               <div className="flex justify-between items-center mb-10">
                 <div className="p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl text-[#3730A3]"><ClipboardList size={28} /></div>
@@ -173,7 +175,6 @@ export default function CareerRoadmapPage() {
                   </div>
                 )}
 
-                {/* NEW: ENHANCED RESOURCE LIST */}
                 <section>
                   <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
                     <PlayCircle size={16} /> Curated Learning Materials

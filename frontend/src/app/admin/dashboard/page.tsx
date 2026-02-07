@@ -7,7 +7,7 @@ import {
   Users, UserCheck, ShieldAlert, Download, Search, 
   ShieldCheck, LogOut, Sun, Moon, Database, Server, 
   ChevronLeft, ChevronRight, UserPlus, HelpCircle, Map, Plus, Trash2, X, Loader2, CheckCircle2,
-  Link as LinkIcon, Video, FileText, BookOpen
+  Link as LinkIcon, Video, FileText, BookOpen, ClipboardList // ADDED THIS IMPORT
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -40,7 +40,6 @@ export default function AdminDashboard() {
   const [newMilestone, setNewMilestone] = useState({ title: "", order: 1 });
 
   // FIXED: Milestone-specific resource state to prevent duplication
-  // We use an object where the key is the milestone ID
   const [resourceForms, setResourceForms] = useState<{[key: number]: any}>({});
 
   const [page, setPage] = useState(1);
@@ -154,38 +153,30 @@ export default function AdminDashboard() {
   };
 
   const handleAddResource = async (milestoneId: number) => {
-    // 1. Get the specific form data for this milestone
     const form = resourceForms[milestoneId];
-    
-    // 2. Validation check
     if (!form?.title || !form?.url) {
       return toast.error("Please provide both a Title and a URL");
     }
 
     try {
-      // 3. Match the keys to your LearningResource model exactly
       await api.post("assessments/admin/resources/", { 
         milestone: milestoneId,
         title: form.title,
         url: form.url,
         resource_type: form.resource_type || "VIDEO",
-        category: "Core", // Matches your model's max_length=100
-        trait_alignment: selectedPath.trait_type[0] || 'R' // Matches your model's max_length=1
+        category: "Core",
+        trait_alignment: selectedPath.trait_type[0] || 'R'
       });
 
       toast.success("Resource Attached");
-      
-      // 4. Clear ONLY this milestone's form inputs
       setResourceForms(prev => ({ 
         ...prev, 
         [milestoneId]: { title: "", url: "", resource_type: "VIDEO" } 
       }));
-
-      // 5. Refresh data to show the new link in the list
       fetchAdminData(page);
     } catch (err: any) {
       console.error("Resource error details:", err.response?.data);
-      toast.error("Failed to add resource. Check console for details.");
+      toast.error("Failed to add resource.");
     }
   };
 
@@ -376,22 +367,27 @@ export default function AdminDashboard() {
         )}
       </main>
 
-      {/* MODALS */}
       <AnimatePresence>
         {isAddingQuestion && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-6"><motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={() => setIsAddingQuestion(false)} className="absolute inset-0 bg-black/80 backdrop-blur-md" /><motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="relative bg-white dark:bg-[#1E293B] w-full max-w-2xl p-12 rounded-[4rem] border dark:border-slate-800 shadow-2xl"><h2 className="text-4xl font-black mb-8 dark:text-white tracking-tight">Deploy Question</h2><form onSubmit={handleAddQuestion} className="space-y-8"><div className="grid grid-cols-6 gap-3">{['R', 'I', 'A', 'S', 'E', 'C'].map(t => (<button key={t} type="button" onClick={() => setNewQuestion({...newQuestion, riasec_type: t})} className={`p-4 rounded-2xl font-black transition-all ${newQuestion.riasec_type === t ? 'bg-indigo-900 text-white shadow-lg scale-110' : 'bg-gray-50 dark:bg-slate-900 text-gray-400 hover:bg-gray-100'}`}>{t}</button>))}</div><textarea required value={newQuestion.text} onChange={(e) => setNewQuestion({...newQuestion, text: e.target.value})} className="w-full p-8 bg-gray-50 dark:bg-slate-900 rounded-[2rem] border-2 border-transparent focus:border-indigo-500 outline-none dark:text-white font-bold text-lg shadow-inner resize-none" rows={4} placeholder="e.g. I prefer solving complex puzzles..."/><div className="flex gap-4"><button type="submit" className="flex-1 py-6 bg-[#10B981] text-white rounded-[2rem] font-black text-lg shadow-xl shadow-emerald-200">Push Live</button><button type="button" onClick={() => setIsAddingQuestion(false)} className="px-10 py-6 text-gray-400 font-bold hover:text-gray-600 transition-colors">Discard</button></div></form></motion.div></div>
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-6"><motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={() => setIsAddingQuestion(false)} className="absolute inset-0 bg-black/80 backdrop-blur-md" /><motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="relative bg-white dark:bg-[#1E293B] w-full max-w-2xl p-12 rounded-none border dark:border-slate-800 shadow-2xl"><h2 className="text-4xl font-black mb-8 dark:text-white tracking-tight">Deploy Question</h2><form onSubmit={handleAddQuestion} className="space-y-8"><div className="grid grid-cols-6 gap-3">{['R', 'I', 'A', 'S', 'E', 'C'].map(t => (<button key={t} type="button" onClick={() => setNewQuestion({...newQuestion, riasec_type: t})} className={`p-4 rounded-2xl font-black transition-all ${newQuestion.riasec_type === t ? 'bg-indigo-900 text-white shadow-lg scale-110' : 'bg-gray-50 dark:bg-slate-900 text-gray-400 hover:bg-gray-100'}`}>{t}</button>))}</div><textarea required value={newQuestion.text} onChange={(e) => setNewQuestion({...newQuestion, text: e.target.value})} className="w-full p-8 bg-gray-50 dark:bg-slate-900 rounded-[2rem] border-2 border-transparent focus:border-indigo-500 outline-none dark:text-white font-bold text-lg shadow-inner resize-none" rows={4} placeholder="e.g. I prefer solving complex puzzles..."/><div className="flex gap-4"><button type="submit" className="flex-1 py-6 bg-[#10B981] text-white rounded-[2rem] font-black text-lg shadow-xl shadow-emerald-200">Push Live</button><button type="button" onClick={() => setIsAddingQuestion(false)} className="px-10 py-6 text-gray-400 font-bold hover:text-gray-600 transition-colors">Discard</button></div></form></motion.div></div>
         )}
 
         {isAddingPath && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-6"><motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={() => setIsAddingPath(false)} className="absolute inset-0 bg-black/80 backdrop-blur-md" /><motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="relative bg-white dark:bg-[#1E293B] w-full max-w-2xl p-12 rounded-[4rem] border border-gray-100 dark:border-slate-800 shadow-2xl"><h2 className="text-4xl font-black mb-8 dark:text-white tracking-tight">New Roadmap</h2><form onSubmit={handleAddPath} className="space-y-6"><div><label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-4">Specialization Title</label><input required value={newPath.title} onChange={(e) => setNewPath({...newPath, title: e.target.value})} className="w-full p-6 bg-gray-50 dark:bg-slate-900 rounded-2xl font-bold dark:text-white outline-none border-2 border-transparent focus:border-indigo-500 shadow-inner" placeholder="e.g. Data Scientist"/></div><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-4">RIASEC Code</label><input required value={newPath.trait_type} onChange={(e) => setNewPath({...newPath, trait_type: e.target.value})} className="w-full p-6 bg-gray-50 dark:bg-slate-900 rounded-2xl font-bold dark:text-white outline-none border-2 border-transparent focus:border-indigo-500 shadow-inner" placeholder="e.g. AI"/></div><div className="space-y-2"><label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-4">Target Duration</label><input required value={newPath.duration} onChange={(e) => setNewPath({...newPath, duration: e.target.value})} className="w-full p-6 bg-gray-50 dark:bg-slate-900 rounded-2xl font-bold dark:text-white outline-none border-2 border-transparent focus:border-indigo-500 shadow-inner" placeholder="e.g. 12 Weeks"/></div></div><div className="flex gap-4 pt-4"><button type="submit" className="flex-1 py-6 bg-indigo-900 text-white rounded-[2rem] font-black text-lg shadow-xl hover:scale-[1.02] transition-all">Initialize Roadmap</button><button type="button" onClick={() => setIsAddingPath(false)} className="px-10 py-6 text-gray-400 font-bold hover:text-gray-600 transition-colors">Cancel</button></div></form></motion.div></div>
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-6"><motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={() => setIsAddingPath(false)} className="absolute inset-0 bg-black/80 backdrop-blur-md" /><motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="relative bg-white dark:bg-[#1E293B] w-full max-w-2xl p-12 rounded-none border border-gray-100 dark:border-slate-800 shadow-2xl"><h2 className="text-4xl font-black mb-8 dark:text-white tracking-tight">New Roadmap</h2><form onSubmit={handleAddPath} className="space-y-6"><div><label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-4">Specialization Title</label><input required value={newPath.title} onChange={(e) => setNewPath({...newPath, title: e.target.value})} className="w-full p-6 bg-gray-50 dark:bg-slate-900 rounded-2xl font-bold dark:text-white outline-none border-2 border-transparent focus:border-indigo-500 shadow-inner" placeholder="e.g. Data Scientist"/></div><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-4">RIASEC Code</label><input required value={newPath.trait_type} onChange={(e) => setNewPath({...newPath, trait_type: e.target.value})} className="w-full p-6 bg-gray-50 dark:bg-slate-900 rounded-2xl font-bold dark:text-white outline-none border-2 border-transparent focus:border-indigo-500 shadow-inner" placeholder="e.g. AI"/></div><div className="space-y-2"><label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-4">Target Duration</label><input required value={newPath.duration} onChange={(e) => setNewPath({...newPath, duration: e.target.value})} className="w-full p-6 bg-gray-50 dark:bg-slate-900 rounded-2xl font-bold dark:text-white outline-none border-2 border-transparent focus:border-indigo-500 shadow-inner" placeholder="e.g. 12 Weeks"/></div></div><div className="flex gap-4 pt-4"><button type="submit" className="flex-1 py-6 bg-indigo-900 text-white rounded-[2rem] font-black text-lg shadow-xl hover:scale-[1.02] transition-all">Initialize Roadmap</button><button type="button" onClick={() => setIsAddingPath(false)} className="px-10 py-6 text-gray-400 font-bold hover:text-gray-600 transition-colors">Cancel</button></div></form></motion.div></div>
         )}
 
         {selectedPath && (
           <div className="fixed inset-0 z-[120] flex items-center justify-end">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedPath(null)} className="absolute inset-0 bg-black/60 backdrop-blur-xl" />
-            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: "spring", damping: 30 }} className="relative w-full max-w-4xl h-full bg-white dark:bg-[#0F172A] p-12 lg:p-16 flex flex-col shadow-2xl rounded-l-[4rem]">
+            <motion.div 
+              initial={{ x: '100%' }} 
+              animate={{ x: 0 }} 
+              exit={{ x: '100%' }} 
+              transition={{ type: "spring", damping: 30 }} 
+              className="relative w-full max-w-4xl h-full bg-white dark:bg-[#0F172A] p-12 lg:p-16 flex flex-col shadow-2xl rounded-none"
+            >
               <div className="flex justify-between items-center mb-10">
-                <div><span className="text-indigo-500 font-black text-sm uppercase tracking-widest">{selectedPath.trait_type} Specialist</span><h2 className="text-4xl font-black dark:text-white">{selectedPath.title} Editor</h2></div>
+                <div className="p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl text-[#3730A3]"><ClipboardList size={28} /></div>
                 <button onClick={() => setSelectedPath(null)} className="p-4 hover:bg-red-50 text-gray-300 hover:text-red-500 rounded-2xl transition-all"><X size={36} /></button>
               </div>
 
@@ -425,7 +421,6 @@ export default function AdminDashboard() {
                         ))}
                       </div>
 
-                      {/* INDIVIDUALIZED FORM LOGIC TO PREVENT DUPLICATION */}
                       <div className="p-6 bg-white dark:bg-slate-900 rounded-[2.5rem] border border-indigo-50 dark:border-slate-700">
                         <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4 ml-2">Attach Link</h5>
                         <div className="grid grid-cols-2 gap-4 mb-4">

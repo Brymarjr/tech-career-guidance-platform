@@ -560,3 +560,12 @@ class MessageView(APIView):
             thread.save() 
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
+    
+    
+class CompleteOnboardingView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        request.user.has_seen_onboarding = True
+        request.user.save()
+        return Response({"status": "success"})

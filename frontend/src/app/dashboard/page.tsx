@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import NotificationBell from "@/components/NotificationBell";
 import BadgeIcon from "@/components/BadgeIcon"; // Ensure this path is correct
+import OnboardingModal from "@/components/OnboardingModal"; // Ensure this path is correct
 
 export default function Dashboard() {
   const router = useRouter();
@@ -25,6 +26,7 @@ export default function Dashboard() {
   const [messages, setMessages] = useState<any[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [showOnboarding, setShowOnboarding] = useState(false); // NEW: Onboarding state
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -35,6 +37,11 @@ export default function Dashboard() {
     try {
       const res = await api.get("assessments/dashboard-summary/");
       setData(res.data);
+      
+      // NEW: Trigger onboarding if user hasn't seen it
+      if (res.data.user && !res.data.user.has_seen_onboarding) {
+        setShowOnboarding(true);
+      }
       
       if (res.data.assessment?.scores) {
         const mapping: any = {
@@ -413,6 +420,11 @@ export default function Dashboard() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* NEW: Conditional Onboarding Modal */}
+      {showOnboarding && (
+        <OnboardingModal onComplete={() => setShowOnboarding(false)} />
+      )}
     </div>
   );
 }

@@ -16,11 +16,8 @@ def get_user_roadmap_context(user):
         return None
 
     trait_code = latest_result.top_trait 
-    
-    # 1. Attempt specialized blended path
     path = CareerPath.objects.prefetch_related('milestones__resources').filter(trait_type=trait_code).first()
     
-    # 2. Fallback to primary trait
     if not path and trait_code:
         primary_char = trait_code[0]
         path = CareerPath.objects.prefetch_related('milestones__resources').filter(trait_type=primary_char).first()
@@ -40,11 +37,13 @@ def get_user_roadmap_context(user):
         milestone_details.append({
             "id": m.id,
             "title": m.title,
+            "order": m.order,
             "status": current_status,
             "is_completed": is_done,
             "submission_url": progress.submission_url if progress else None,
             "feedback": progress.mentor_feedback if progress else None,
-            "resources": [{"name": r.title, "url": r.url} for r in m.resources.all()]
+            # FIXED: Ensure consistency in resource field names
+            "resources": [{"title": r.title, "url": r.url, "resource_type": r.resource_type} for r in m.resources.all()]
         })
 
     return {
@@ -71,7 +70,6 @@ class SubmitMilestoneView(APIView):
         progress.status = 'PENDING_REVIEW'
         progress.save()
 
-        # NOTIFICATION: Only uses recipient and message fields
         thread = Thread.objects.filter(student=request.user).first()
         if thread and thread.mentor:
             Notification.objects.create(
@@ -107,7 +105,6 @@ class MentorReviewView(APIView):
         progress.mentor_feedback = feedback
         progress.save()
 
-        # NOTIFICATION: Alert the student
         Notification.objects.create(
             recipient=progress.user,
             message=notif_msg
@@ -168,30 +165,25 @@ class DashboardSummaryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        # 1. Calling the function directly since it's in this file
         roadmap_data = get_user_roadmap_context(request.user)
-        
         latest_result = AssessmentResult.objects.filter(user=request.user).order_by('-created_at').first()
         
         from .models import UserAchievement, UserProgress
         from .serializers import UserAchievementSerializer
         
-        # 2. Fetch earned achievements
         all_earned = UserAchievement.objects.filter(user=request.user).select_related('achievement')
-        
-        # 3. Handle notifications for the celebration toast
         new_achievements = all_earned.filter(is_notified=False)
         new_serialized = UserAchievementSerializer(new_achievements, many=True).data
         
-        # Mark as notified so the toast only pops once
         new_achievements.update(is_notified=True)
 
         return Response({
             "user": {
                 "username": request.user.username, 
                 "role": request.user.role,
-                "xp_total": request.user.xp_total, # Pulled from your CustomUser model
-                "level": request.user.level        # Pulled from your CustomUser model
+                "xp_total": request.user.xp_total, 
+                "level": request.user.level,
+                "has_seen_onboarding": request.user.has_seen_onboarding,       
             },
             "assessment": {
                 "top_trait": latest_result.top_trait if latest_result else None,
@@ -222,10 +214,7 @@ class PendingReviewsListView(APIView):
         if request.user.role != 'MENTOR' and not request.user.is_staff:
             return Response({"error": "Unauthorized."}, status=status.HTTP_403_FORBIDDEN)
 
-        # 1. Get all students connected to this mentor
         student_ids = Thread.objects.filter(mentor=request.user).values_list('student_id', flat=True)
-
-        # 2. Get all PENDING_REVIEW progress objects for these students
         pending_work = UserProgress.objects.filter(
             user_id__in=student_ids,
             status='PENDING_REVIEW'
@@ -240,28 +229,19 @@ class PendingReviewsListView(APIView):
                 "path_title": item.milestone.path.title,
                 "submission_url": item.submission_url,
                 "submission_notes": item.submission_notes,
-                "submitted_at": item.completed_at # Note: we use this for the submission timestamp
+                "submitted_at": item.completed_at 
             })
 
         return Response(data)
     
     
 class AdminQuestionListCreateView(generics.ListCreateAPIView):
-    """
-    GET: List all questions
-    POST: Create a new question
-    """
     queryset = Question.objects.all().order_by('riasec_type')
     serializer_class = QuestionSerializer
-    permission_classes = [permissions.IsAdminUser] # Only Admins can touch this
+    permission_classes = [permissions.IsAdminUser] 
 
 
 class AdminQuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """
-    GET: Retrieve a question
-    PUT/PATCH: Update a question
-    DELETE: Remove a question
-    """
     queryset = Question.objects.all()
     serializer_class = QuestionSerializer
     permission_classes = [permissions.IsAdminUser]
@@ -285,7 +265,6 @@ class AdminResourceCreateView(generics.CreateAPIView):
     permission_classes = [permissions.IsAdminUser]
 
     def perform_create(self, serializer):
-        # Explicitly grab the milestone ID from the request data
         milestone_id = self.request.data.get('milestone')
         if milestone_id:
             serializer.save(milestone_id=milestone_id)
@@ -303,36 +282,38 @@ class StudentLibraryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        # 1. Look for the user's progress to identify their ACTIVE path
-        # select_related avoids multiple database hits
+        # 1. Try to find path from current progress
         latest_progress = UserProgress.objects.filter(
             user=request.user
         ).select_related('milestone__path').first()
         
-        if not latest_progress:
-            # Fallback: If they haven't started a milestone, 
-            # find the path by matching the TOP TRAIT from their assessment result
-            from .models import AssessmentResult
-            result = AssessmentResult.objects.filter(user=request.user).first()
-            
-            if result:
-                # We look for a path where the trait_type matches EXACTLY or contains the trait
-                active_path = CareerPath.objects.filter(trait_type=result.top_trait).first()
-            else:
-                active_path = None
-        else:
+        active_path = None
+        
+        if latest_progress:
             active_path = latest_progress.milestone.path
+        else:
+            # 2. Fallback: Find path matching their Assessment Result
+            result = AssessmentResult.objects.filter(user=request.user).order_by('-created_at').first()
+            if result:
+                # Check for exact match or first character (e.g., 'RI' matches 'R')
+                trait = result.top_trait
+                active_path = CareerPath.objects.filter(trait_type=trait).first()
+                if not active_path and trait:
+                    active_path = CareerPath.objects.filter(trait_type=trait[0]).first()
 
-        # 2. If we still can't find a path, return an empty library instead of a wrong one
+        # 3. If still no path, just show the first available path so the page isn't empty
+        if not active_path:
+            active_path = CareerPath.objects.first()
+
         if not active_path:
             return Response({
                 "path_title": "General Resources",
                 "resources": []
             })
 
-        # 3. CRITICAL: Fetch resources ONLY for milestones that belong to this specific path ID
+        # 4. Fetch resources for ALL milestones in this path
         resources = LearningResource.objects.filter(
-            milestone__path_id=active_path.id
+            milestone__path=active_path
         ).order_by('milestone__order')
         
         serializer = StudentResourceSerializer(resources, many=True)
@@ -350,14 +331,10 @@ class AchievementListView(APIView):
         from .models import Achievement, UserAchievement
         from .serializers import AchievementSerializer
         
-        # Get all possible achievements
         all_achievements = Achievement.objects.all()
-        # Get the IDs of achievements this user has earned
         earned_ids = UserAchievement.objects.filter(user=request.user).values_list('achievement_id', flat=True)
         
         serializer = AchievementSerializer(all_achievements, many=True)
-        
-        # We add an 'is_earned' flag to each achievement for the frontend
         data = serializer.data
         for item in data:
             item['is_earned'] = item['id'] in earned_ids
@@ -370,16 +347,13 @@ class LeaderboardView(APIView):
     
     def get(self, request):
         from users.models import CustomUser
-        from .models import AssessmentResult # Ensure this is imported
+        from .models import AssessmentResult 
         
-        # Get top 10 students by XP
         top_users = CustomUser.objects.filter(role='STUDENT').order_by('-xp_total')[:10]
         
         data = []
         for u in top_users:
-            # We use the correct default reverse relationship or filter directly
             latest_assessment = AssessmentResult.objects.filter(user=u).order_by('-created_at').first()
-            
             data.append({
                 "username": u.username,
                 "xp": u.xp_total,
@@ -396,9 +370,6 @@ class StudentPortfolioView(APIView):
 
     def get(self, request):
         from .models import UserProgress
-        
-        # Using 'completed_at' for ordering as confirmed by the error log
-        # We also use 'mentor_feedback' which was listed in the choices
         completed_work = UserProgress.objects.filter(
             user=request.user, 
             status='COMPLETED'
@@ -408,8 +379,8 @@ class StudentPortfolioView(APIView):
             "id": work.id,
             "milestone_title": work.milestone.title,
             "project_url": work.submission_url,
-            "completion_date": work.completed_at, # Matches 'completed_at'
-            "mentor_notes": work.mentor_feedback # Matches 'mentor_feedback'
+            "completion_date": work.completed_at,
+            "mentor_notes": work.mentor_feedback 
         } for work in completed_work]
 
         return Response({
