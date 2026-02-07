@@ -16,6 +16,8 @@ from .views import (
     AdminResourceCreateView,
     StudentLibraryView, 
     AchievementListView,
+    LeaderboardView,
+    StudentPortfolioView,
     
 )
 
@@ -50,4 +52,7 @@ urlpatterns = [
     path('admin/resources/', AdminResourceCreateView.as_view(), name='admin-resource-create'),
     path('library/', StudentLibraryView.as_view(), name='student-library'),
     path('achievements-list/', AchievementListView.as_view(), name='achievements-list'),
+    path('leaderboard/', LeaderboardView.as_view(), name='leaderboard'),
+    path('portfolio/', StudentPortfolioView.as_view(), name='student-portfolio'),
+    
 ]

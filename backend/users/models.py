@@ -44,11 +44,20 @@ class CustomUser(AbstractUser):
     years_of_experience = models.PositiveIntegerField(default=0)
     is_available = models.BooleanField(default=True)
     last_activity = models.DateTimeField(null=True, blank=True)
+    xp_total = models.IntegerField(default=0)
+    level = models.IntegerField(default=1)
+    has_seen_onboarding = models.BooleanField(default=False)
 
     objects = CustomUserManager()
 
     USERNAME_FIELD = 'username'
     REQUIRED_FIELDS = ['email']
+    
+    def add_xp(self, amount):
+        self.xp_total += amount
+        # Simple leveling logic: every 500 XP is a new level
+        self.level = (self.xp_total // 500) + 1
+        self.save()
     
     @property
     def average_rating(self):

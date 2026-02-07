@@ -38,3 +38,17 @@ def check_for_achievements(sender, instance, **kwargs):
                 }
             )
             UserAchievement.objects.get_or_create(user=user, achievement=specialist_badge)
+            
+            
+@receiver(post_save, sender=UserProgress)
+def award_xp_on_completion(sender, instance, **kwargs):
+    if instance.status == 'COMPLETED':
+        # Award 100 XP for every milestone completed
+        instance.user.add_xp(100)
+        
+        
+@receiver(post_save, sender=UserAchievement)
+def award_xp_for_badge(sender, instance, created, **kwargs):
+    if created:
+        # Award the specific points defined in the Achievement model
+        instance.user.add_xp(instance.achievement.points)

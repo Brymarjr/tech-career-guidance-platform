@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer, PolarRadiusAxis } from "recharts";
 import { 
   LayoutDashboard, Award, BookOpen, ChevronRight, 
-  User, LogOut, Target, Sparkles, TrendingUp, X, ExternalLink, CheckCircle2, Send, Settings, Moon, Sun, MessageSquare, Link, ClipboardList, Loader2, Trophy
+  User, LogOut, Target, Sparkles, TrendingUp, X, ExternalLink, CheckCircle2, Send, Settings, Moon, Sun, MessageSquare, Link, ClipboardList, Loader2, Trophy, Zap, FolderGit2
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -186,6 +186,22 @@ export default function Dashboard() {
           >
             <BookOpen size={22} /> Learning Library
           </motion.div>
+
+          <motion.div 
+            whileHover={{ x: 5 }} 
+            onClick={() => router.push("/dashboard/leaderboard")} 
+            className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"
+          >
+            <TrendingUp size={22} /> Leaderboard
+          </motion.div>
+
+          <motion.div 
+            whileHover={{ x: 5 }} 
+            onClick={() => router.push("/dashboard/portfolio")} 
+            className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"
+          >
+            <FolderGit2 size={22} /> Project Portfolio
+          </motion.div>
         </nav>
       </aside>
 
@@ -193,7 +209,29 @@ export default function Dashboard() {
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-16 gap-6 relative">
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
             <h1 className="text-5xl font-black text-[#111827] dark:text-white mb-3 tracking-tight">Hello, {data.user.username}! ✨</h1>
-            <p className="text-[#6B7280] dark:text-gray-400 text-xl font-medium">Your <span className="text-[#3730A3] dark:text-indigo-400 font-bold">{data.roadmap?.title}</span> is looking strong today.</p>
+            <p className="text-[#6B7280] dark:text-gray-400 text-xl font-medium mb-6">Your <span className="text-[#3730A3] dark:text-indigo-400 font-bold">{data.roadmap?.title}</span> is looking strong today.</p>
+            
+            {/* LEVEL & XP PROGRESS BAR */}
+            <div className="flex items-center gap-4 bg-white dark:bg-[#1E293B] p-4 rounded-3xl shadow-sm border border-gray-50 dark:border-slate-800 w-fit">
+              <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-amber-200 dark:shadow-none">
+                {data.user.level || 1}
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1">
+                  <Zap size={10} className="text-amber-500 fill-amber-500" /> Current Level
+                </p>
+                <div className="flex items-center gap-3">
+                  <div className="h-2.5 w-40 bg-gray-100 dark:bg-slate-900 rounded-full overflow-hidden p-0.5 border border-gray-50 dark:border-slate-800">
+                    <motion.div 
+                      initial={{ width: 0 }} 
+                      animate={{ width: `${((data.user.xp_total || 0) % 500) / 5}%` }} 
+                      className="h-full bg-gradient-to-r from-amber-400 to-amber-600 rounded-full" 
+                    />
+                  </div>
+                  <span className="text-[10px] font-black text-amber-600 dark:text-amber-500 whitespace-nowrap">{(data.user.xp_total || 0) % 500} / 500 XP</span>
+                </div>
+              </div>
+            </div>
           </motion.div>
           
           <div className="flex items-center gap-6">

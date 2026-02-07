@@ -3,8 +3,8 @@ from rest_framework.response import Response
 from rest_framework import status, permissions, generics
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from .models import AssessmentResult, CareerPath, UserProgress, Milestone, ChatMessage, Question, LearningResource
-from .serializers import QuestionSerializer, CareerPathSerializer, MilestoneSerializer, LearningResourceSerializer, StudentResourceSerializer
+from .models import AssessmentResult, CareerPath, UserProgress, Milestone, ChatMessage, Question, LearningResource, UserAchievement
+from .serializers import QuestionSerializer, CareerPathSerializer, MilestoneSerializer, LearningResourceSerializer, StudentResourceSerializer, UserAchievementSerializer
 from .services import RIASECService
 from .ai_service import CareerMentorService
 from django.contrib.auth import get_user_model
@@ -168,31 +168,38 @@ class DashboardSummaryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        # 1. Calling the function directly since it's in this file
         roadmap_data = get_user_roadmap_context(request.user)
+        
         latest_result = AssessmentResult.objects.filter(user=request.user).order_by('-created_at').first()
         
-        from .models import UserAchievement
+        from .models import UserAchievement, UserProgress
         from .serializers import UserAchievementSerializer
         
-        # 1. Fetch all achievements for the list
+        # 2. Fetch earned achievements
         all_earned = UserAchievement.objects.filter(user=request.user).select_related('achievement')
         
-        # 2. Identify achievements the user hasn't been notified about yet
+        # 3. Handle notifications for the celebration toast
         new_achievements = all_earned.filter(is_notified=False)
         new_serialized = UserAchievementSerializer(new_achievements, many=True).data
         
-        # 3. Mark them as notified so they don't pop up again
+        # Mark as notified so the toast only pops once
         new_achievements.update(is_notified=True)
 
         return Response({
-            "user": {"username": request.user.username, "role": request.user.role},
+            "user": {
+                "username": request.user.username, 
+                "role": request.user.role,
+                "xp_total": request.user.xp_total, # Pulled from your CustomUser model
+                "level": request.user.level        # Pulled from your CustomUser model
+            },
             "assessment": {
                 "top_trait": latest_result.top_trait if latest_result else None,
                 "scores": latest_result.scores if latest_result else None,
             },
             "roadmap": roadmap_data,
             "achievements": UserAchievementSerializer(all_earned, many=True).data,
-            "new_achievements": new_serialized # This triggers the toast
+            "new_achievements": new_serialized 
         })
 
 
@@ -356,3 +363,56 @@ class AchievementListView(APIView):
             item['is_earned'] = item['id'] in earned_ids
             
         return Response(data)
+    
+    
+class LeaderboardView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        from users.models import CustomUser
+        from .models import AssessmentResult # Ensure this is imported
+        
+        # Get top 10 students by XP
+        top_users = CustomUser.objects.filter(role='STUDENT').order_by('-xp_total')[:10]
+        
+        data = []
+        for u in top_users:
+            # We use the correct default reverse relationship or filter directly
+            latest_assessment = AssessmentResult.objects.filter(user=u).order_by('-created_at').first()
+            
+            data.append({
+                "username": u.username,
+                "xp": u.xp_total,
+                "level": u.level,
+                "top_trait": latest_assessment.top_trait if latest_assessment else "N/A",
+                "full_name": u.full_name
+            })
+            
+        return Response(data)
+    
+    
+class StudentPortfolioView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .models import UserProgress
+        
+        # Using 'completed_at' for ordering as confirmed by the error log
+        # We also use 'mentor_feedback' which was listed in the choices
+        completed_work = UserProgress.objects.filter(
+            user=request.user, 
+            status='COMPLETED'
+        ).exclude(submission_url='').select_related('milestone').order_by('-completed_at')
+
+        portfolio_data = [{
+            "id": work.id,
+            "milestone_title": work.milestone.title,
+            "project_url": work.submission_url,
+            "completion_date": work.completed_at, # Matches 'completed_at'
+            "mentor_notes": work.mentor_feedback # Matches 'mentor_feedback'
+        } for work in completed_work]
+
+        return Response({
+            "username": request.user.username,
+            "projects": portfolio_data
+        })
