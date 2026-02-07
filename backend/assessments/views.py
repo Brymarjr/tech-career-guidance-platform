@@ -1,20 +1,29 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status, permissions
+from rest_framework import status, permissions, generics
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from .models import AssessmentResult, CareerPath, UserProgress, Milestone, ChatMessage
+from .models import AssessmentResult, CareerPath, UserProgress, Milestone, ChatMessage, Question, LearningResource
+from .serializers import QuestionSerializer, CareerPathSerializer, MilestoneSerializer, LearningResourceSerializer, StudentResourceSerializer
 from .services import RIASECService
 from .ai_service import CareerMentorService
 from django.contrib.auth import get_user_model
+from users.models import Notification, Thread 
 
 def get_user_roadmap_context(user):
     latest_result = AssessmentResult.objects.filter(user=user).order_by('-created_at').first()
     if not latest_result:
         return None
 
-    trait_char = latest_result.top_trait[0]
-    path = CareerPath.objects.prefetch_related('milestones__resources').filter(trait_type=trait_char).first()
+    trait_code = latest_result.top_trait 
+    
+    # 1. Attempt specialized blended path
+    path = CareerPath.objects.prefetch_related('milestones__resources').filter(trait_type=trait_code).first()
+    
+    # 2. Fallback to primary trait
+    if not path and trait_code:
+        primary_char = trait_code[0]
+        path = CareerPath.objects.prefetch_related('milestones__resources').filter(trait_type=primary_char).first()
     
     if not path:
         return None
@@ -23,13 +32,18 @@ def get_user_roadmap_context(user):
     completed_count = 0
     for m in path.milestones.all():
         progress = UserProgress.objects.filter(user=user, milestone=m).first()
+        current_status = progress.status if progress else 'IN_PROGRESS'
         is_done = progress.is_completed if progress else False
+        
         if is_done: completed_count += 1
         
         milestone_details.append({
             "id": m.id,
             "title": m.title,
+            "status": current_status,
             "is_completed": is_done,
+            "submission_url": progress.submission_url if progress else None,
+            "feedback": progress.mentor_feedback if progress else None,
             "resources": [{"name": r.title, "url": r.url} for r in m.resources.all()]
         })
 
@@ -40,6 +54,66 @@ def get_user_roadmap_context(user):
         "completion_percentage": (completed_count / len(milestone_details) * 100) if milestone_details else 0
     }
 
+class SubmitMilestoneView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, milestone_id):
+        milestone = get_object_or_404(Milestone, id=milestone_id)
+        submission_url = request.data.get('submission_url')
+        notes = request.data.get('notes', '')
+
+        if not submission_url:
+            return Response({"error": "A submission URL is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        progress, _ = UserProgress.objects.get_or_create(user=request.user, milestone=milestone)
+        progress.submission_url = submission_url
+        progress.submission_notes = notes
+        progress.status = 'PENDING_REVIEW'
+        progress.save()
+
+        # NOTIFICATION: Only uses recipient and message fields
+        thread = Thread.objects.filter(student=request.user).first()
+        if thread and thread.mentor:
+            Notification.objects.create(
+                recipient=thread.mentor,
+                message=f"Submission Alert: {request.user.username} submitted '{milestone.title}' for review."
+            )
+
+        return Response({"status": "PENDING_REVIEW"})
+
+class MentorReviewView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, progress_id):
+        if request.user.role != 'MENTOR' and not request.user.is_staff:
+            return Response({"error": "Unauthorized."}, status=status.HTTP_403_FORBIDDEN)
+
+        progress = get_object_or_404(UserProgress, id=progress_id)
+        action = request.data.get('action')
+        feedback = request.data.get('feedback', '')
+
+        if action == 'APPROVE':
+            progress.status = 'COMPLETED'
+            progress.is_completed = True
+            progress.completed_at = timezone.now()
+            notif_msg = f"Your milestone '{progress.milestone.title}' was approved! 🚀"
+        elif action == 'REJECT':
+            progress.status = 'REJECTED'
+            progress.is_completed = False
+            notif_msg = f"Feedback on '{progress.milestone.title}': Your mentor requested changes."
+        else:
+            return Response({"error": "Invalid action."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        progress.mentor_feedback = feedback
+        progress.save()
+
+        # NOTIFICATION: Alert the student
+        Notification.objects.create(
+            recipient=progress.user,
+            message=notif_msg
+        )
+
+        return Response({"status": progress.status})
 
 class AdminDashboardStatsView(APIView):
     permission_classes = [permissions.IsAdminUser]
@@ -62,7 +136,7 @@ class ChatWithMentorView(APIView):
         roadmap_data = get_user_roadmap_context(request.user)
         
         if not roadmap_data:
-            return Response({"error": "Please complete your assessment first."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Please complete assessment."}, status=status.HTTP_400_BAD_REQUEST)
 
         history = list(reversed(ChatMessage.objects.filter(user=request.user).order_by('-created_at')[:10]))
 
@@ -71,14 +145,9 @@ class ChatWithMentorView(APIView):
             ChatMessage.objects.create(user=request.user, role='user', content=user_message)
             ChatMessage.objects.create(user=request.user, role='assistant', content=ai_response)
             return Response({"response": ai_response})
-            
         except Exception as e:
-            error_msg = str(e)
-            if "insufficient_quota" in error_msg:
-                # Synchronized message for the test to find
-                fallback = "I'm currently recharging my knowledge base (OpenAI Quota Exceeded). Please check back later!"
-                return Response({"response": fallback}, status=status.HTTP_200_OK)
-            
+            if "insufficient_quota" in str(e):
+                return Response({"response": "I'm currently recharging (OpenAI Quota)."}, status=status.HTTP_200_OK)
             return Response({"error": "Mentor service unavailable."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class SubmitAssessmentView(APIView):
@@ -89,15 +158,17 @@ class SubmitAssessmentView(APIView):
         if not answers:
             return Response({"error": "No answers provided"}, status=status.HTTP_400_BAD_REQUEST)
         
-        scores, top_trait = RIASECService.calculate_scores(answers)
-        AssessmentResult.objects.create(user=request.user, scores=scores, top_trait=top_trait)
-        return Response({"top_trait": top_trait, "scores": scores}, status=status.HTTP_201_CREATED)
+        scores, primary_trait, blended_code = RIASECService.calculate_scores(answers)
+        AssessmentResult.objects.create(user=request.user, scores=scores, top_trait=blended_code)
+        
+        return Response({"top_trait": primary_trait, "scores": scores, "code": blended_code}, status=status.HTTP_201_CREATED)
 
 class DashboardSummaryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         roadmap_data = get_user_roadmap_context(request.user)
+        # Corrected: Explicitly filter by user field
         latest_result = AssessmentResult.objects.filter(user=request.user).order_by('-created_at').first()
         return Response({
             "user": {"username": request.user.username, "role": request.user.role},
@@ -118,4 +189,131 @@ class ToggleMilestoneView(APIView):
         progress.completed_at = timezone.now() if progress.is_completed else None
         progress.save()
         return Response({"is_completed": progress.is_completed, "milestone": milestone.title})
+    
+    
+class PendingReviewsListView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
 
+    def get(self, request):
+        if request.user.role != 'MENTOR' and not request.user.is_staff:
+            return Response({"error": "Unauthorized."}, status=status.HTTP_403_FORBIDDEN)
+
+        # 1. Get all students connected to this mentor
+        student_ids = Thread.objects.filter(mentor=request.user).values_list('student_id', flat=True)
+
+        # 2. Get all PENDING_REVIEW progress objects for these students
+        pending_work = UserProgress.objects.filter(
+            user_id__in=student_ids,
+            status='PENDING_REVIEW'
+        ).select_related('user', 'milestone', 'milestone__path').order_by('-completed_at')
+
+        data = []
+        for item in pending_work:
+            data.append({
+                "id": item.id,
+                "student_name": item.user.username,
+                "milestone_title": item.milestone.title,
+                "path_title": item.milestone.path.title,
+                "submission_url": item.submission_url,
+                "submission_notes": item.submission_notes,
+                "submitted_at": item.completed_at # Note: we use this for the submission timestamp
+            })
+
+        return Response(data)
+    
+    
+class AdminQuestionListCreateView(generics.ListCreateAPIView):
+    """
+    GET: List all questions
+    POST: Create a new question
+    """
+    queryset = Question.objects.all().order_by('riasec_type')
+    serializer_class = QuestionSerializer
+    permission_classes = [permissions.IsAdminUser] # Only Admins can touch this
+
+
+class AdminQuestionDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET: Retrieve a question
+    PUT/PATCH: Update a question
+    DELETE: Remove a question
+    """
+    queryset = Question.objects.all()
+    serializer_class = QuestionSerializer
+    permission_classes = [permissions.IsAdminUser]
+    
+    
+class AdminCareerPathListView(generics.ListCreateAPIView):
+    queryset = CareerPath.objects.all().prefetch_related('milestones')
+    serializer_class = CareerPathSerializer
+    permission_classes = [permissions.IsAdminUser]
+
+
+class AdminMilestoneCreateView(generics.CreateAPIView):
+    queryset = Milestone.objects.all()
+    serializer_class = MilestoneSerializer
+    permission_classes = [permissions.IsAdminUser]
+    
+    
+class AdminResourceCreateView(generics.CreateAPIView):
+    queryset = LearningResource.objects.all()
+    serializer_class = LearningResourceSerializer
+    permission_classes = [permissions.IsAdminUser]
+
+    def perform_create(self, serializer):
+        # Explicitly grab the milestone ID from the request data
+        milestone_id = self.request.data.get('milestone')
+        if milestone_id:
+            serializer.save(milestone_id=milestone_id)
+        else:
+            serializer.save()
+
+
+class AdminMilestoneDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Milestone.objects.all()
+    serializer_class = MilestoneSerializer
+    permission_classes = [permissions.IsAdminUser]
+    
+    
+class StudentLibraryView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        # 1. Look for the user's progress to identify their ACTIVE path
+        # select_related avoids multiple database hits
+        latest_progress = UserProgress.objects.filter(
+            user=request.user
+        ).select_related('milestone__path').first()
+        
+        if not latest_progress:
+            # Fallback: If they haven't started a milestone, 
+            # find the path by matching the TOP TRAIT from their assessment result
+            from .models import AssessmentResult
+            result = AssessmentResult.objects.filter(user=request.user).first()
+            
+            if result:
+                # We look for a path where the trait_type matches EXACTLY or contains the trait
+                active_path = CareerPath.objects.filter(trait_type=result.top_trait).first()
+            else:
+                active_path = None
+        else:
+            active_path = latest_progress.milestone.path
+
+        # 2. If we still can't find a path, return an empty library instead of a wrong one
+        if not active_path:
+            return Response({
+                "path_title": "General Resources",
+                "resources": []
+            })
+
+        # 3. CRITICAL: Fetch resources ONLY for milestones that belong to this specific path ID
+        resources = LearningResource.objects.filter(
+            milestone__path_id=active_path.id
+        ).order_by('milestone__order')
+        
+        serializer = StudentResourceSerializer(resources, many=True)
+        
+        return Response({
+            "path_title": active_path.title,
+            "resources": serializer.data
+        })

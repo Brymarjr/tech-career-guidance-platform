@@ -22,6 +22,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .serializers import UserSerializer, MentorPublicSerializer, ThreadSerializer, MessageSerializer
 from .models import CustomUser, PasswordResetOTP, MentorshipConnection, Notification, Thread, Message
+from assessments.models import UserProgress
 
 
 User = get_user_model()
@@ -190,11 +191,39 @@ class MentorDashboardView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        if request.user.role != 'MENTOR':
+        if request.user.role != 'MENTOR' and not request.user.is_staff:
             return Response({"error": "Unauthorized access."}, status=403)
         
+        # 1. Fetch Connection Requests
         requests = MentorshipConnection.objects.filter(mentor=request.user).order_by('-created_at')
-        data = [{
+        
+        # 2. STATS ENGINE LOGIC
+        # Count students currently connected via Threads
+        active_students_count = Thread.objects.filter(mentor=request.user).count()
+        
+        # Get IDs of all students connected to this mentor to filter their progress
+        connected_student_ids = Thread.objects.filter(mentor=request.user).values_list('student_id', flat=True)
+        
+        # Count milestones currently waiting for this mentor's review
+        pending_reviews_count = UserProgress.objects.filter(
+            user_id__in=connected_student_ids, 
+            status='PENDING_REVIEW'
+        ).count()
+        
+        # Count all milestones this mentor has successfully approved (COMPLETED)
+        total_approved_count = UserProgress.objects.filter(
+            user_id__in=connected_student_ids, 
+            status='COMPLETED'
+        ).count()
+
+        stats_data = {
+            "active_students": active_students_count,
+            "pending_reviews": pending_reviews_count,
+            "total_approved": total_approved_count
+        }
+
+        # 3. Format Request Data
+        request_list = [{
             "id": r.id,
             "student_name": r.student.full_name or r.student.username,
             "student_email": r.student.email,
@@ -202,7 +231,12 @@ class MentorDashboardView(APIView):
             "status": r.status,
             "created_at": r.created_at
         } for r in requests]
-        return Response(data)
+
+        # Return combined data to match the Frontend expectations
+        return Response({
+            "requests": request_list,
+            "stats": stats_data
+        })
 
     def patch(self, request, pk):
         try:
@@ -214,8 +248,7 @@ class MentorDashboardView(APIView):
                 connection.save()
 
                 # --- PRO LEVEL: Thread & Notification Logic ---
-                from .models import Thread, Notification
-
+                
                 # 1. Automatic Thread Creation (Only if Accepted)
                 if new_status == 'ACCEPTED':
                     Thread.objects.get_or_create(

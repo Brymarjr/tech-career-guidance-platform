@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer, PolarRadiusAxis } from "recharts";
 import { 
   LayoutDashboard, Award, BookOpen, ChevronRight, 
-  User, LogOut, Target, Sparkles, TrendingUp, X, ExternalLink, CheckCircle2, Send, Settings, Moon, Sun, MessageSquare
+  User, LogOut, Target, Sparkles, TrendingUp, X, ExternalLink, CheckCircle2, Send, Settings, Moon, Sun, MessageSquare, Link, ClipboardList, Loader2
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -18,13 +18,13 @@ export default function Dashboard() {
   const { logout, user, isDarkMode, toggleTheme } = useAuth();
   const [data, setData] = useState<any>(null);
   const [chartData, setChartData] = useState<any>([]);
-  const [selectedMilestone, setSelectedMilestone] = useState<any>(null);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<any[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const fetchDashboard = async () => {
@@ -48,14 +48,12 @@ export default function Dashboard() {
         setChartData(formatted);
       }
       
-      // Fetch unread messages count
       const threadsRes = await api.get("users/threads/");
       const totalUnread = threadsRes.data.reduce((acc: number, t: any) => acc + (t.unread_count || 0), 0);
       setUnreadMessages(totalUnread);
 
     } catch (err: any) {
       if (err.response?.status !== 401 && localStorage.getItem('access_token')) {
-        console.error("Dashboard load failed", err);
         toast.error("Failed to load dashboard data");
       }
     }
@@ -68,7 +66,6 @@ export default function Dashboard() {
     }
     if (user && user.loggedIn) {
       fetchDashboard();
-      // Poll unread count every 30 seconds
       const interval = setInterval(fetchDashboard, 30000);
       return () => clearInterval(interval);
     }
@@ -78,19 +75,7 @@ export default function Dashboard() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  const handleToggleMilestone = async (e: React.MouseEvent, milestoneId: number) => {
-    e.stopPropagation();
-    try {
-      const res = await api.post(`assessments/milestone/${milestoneId}/toggle/`);
-      if (res.data.is_completed) {
-        toast.success(`Milestone "${res.data.milestone}" completed!`);
-      }
-      fetchDashboard();
-    } catch (err) {
-      toast.error("Failed to update progress");
-    }
-  };
-
+  // AI MENTOR CHAT LOGIC
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim()) return;
@@ -148,15 +133,22 @@ export default function Dashboard() {
             )}
           </motion.div>
 
-          <motion.div whileHover={{ x: 5 }} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer">
+          <motion.div 
+            whileHover={{ x: 5 }} 
+            onClick={() => router.push("/dashboard/roadmap")}
+            className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"
+          >
             <Award size={22} /> Career Roadmap
           </motion.div>
-          <motion.div whileHover={{ x: 5 }} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer">
+          
+          <motion.div 
+            whileHover={{ x: 5 }} 
+            onClick={() => router.push("/dashboard/library")}
+            className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"
+          >
             <BookOpen size={22} /> Learning Library
           </motion.div>
-          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/settings")} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer">
-            <Settings size={22} /> Profile Settings
-          </motion.div>
+          {/* REMOVED: Profile Settings from Sidebar as requested */}
         </nav>
       </aside>
 
@@ -261,71 +253,7 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-
-        {data.roadmap && (
-          <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} className="mt-16 bg-white dark:bg-[#1E293B] rounded-[4rem] p-12 lg:p-16 border border-gray-50 dark:border-slate-800 shadow-2xl mb-32">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-16">
-              <div className="flex items-center gap-6">
-                <div className="p-5 bg-indigo-50 dark:bg-indigo-900/30 text-[#3730A3] dark:text-indigo-400 rounded-[2rem] shadow-sm transform -rotate-6"><Award size={40} /></div>
-                <div>
-                  <h3 className="text-4xl font-black text-[#1F2937] dark:text-white leading-none mb-3">{data.roadmap.title}</h3>
-                  <div className="flex items-center gap-3">
-                    <span className="px-4 py-1.5 bg-emerald-50 dark:bg-emerald-900/30 text-[#10B981] rounded-full text-xs font-black uppercase tracking-tighter">Verified Path</span>
-                    <span className="text-gray-400 font-bold text-sm">Target: {data.roadmap.duration}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
-              {data.roadmap.milestones.map((step: any, index: number) => (
-                <motion.div 
-                  key={step.id} 
-                  whileHover={{ y: -12, scale: 1.02 }} 
-                  onClick={() => setSelectedMilestone(step)} 
-                  className={`cursor-pointer group relative p-12 rounded-[3.5rem] border-2 transition-all shadow-sm hover:shadow-2xl ${
-                    step.is_completed ? 'bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-800' : 'bg-[#FBFBFF] dark:bg-slate-900/50 border-transparent dark:border-slate-800 hover:border-[#3730A3]'
-                  }`}
-                >
-                  <motion.button whileTap={{ scale: 0.8 }} onClick={(e) => handleToggleMilestone(e, step.id)} className={`absolute -top-6 -right-6 w-16 h-16 rounded-[2rem] flex items-center justify-center shadow-2xl transition-all z-20 ${step.is_completed ? 'bg-[#10B981] text-white rotate-0' : 'bg-white dark:bg-slate-800 text-gray-200 border border-gray-100 dark:border-slate-700 hover:text-[#3730A3]'}`}>
-                    <CheckCircle2 size={32} />
-                  </motion.button>
-                  <div className="absolute -top-4 -left-4 w-12 h-12 bg-[#3730A3] text-white flex items-center justify-center rounded-2xl font-black text-lg shadow-lg">{index + 1}</div>
-                  <h4 className={`text-2xl font-black mb-6 mt-4 leading-tight ${step.is_completed ? 'text-emerald-900 dark:text-emerald-400' : 'text-[#1F2937] dark:text-white'}`}>{step.title}</h4>
-                  <div className="flex items-center gap-2 font-black text-xs text-[#10B981] group-hover:gap-4 transition-all">EXPLORE RESOURCES <ChevronRight size={18} /></div>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        )}
       </main>
-
-      <AnimatePresence>
-        {selectedMilestone && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-end">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedMilestone(null)} className="absolute inset-0 bg-black/40 backdrop-blur-xl" />
-            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: "spring", damping: 30, stiffness: 200 }} className="relative w-full max-w-xl h-full bg-white dark:bg-[#0F172A] p-12 lg:p-16 flex flex-col shadow-[-40px_0_80px_rgba(0,0,0,0.1)] rounded-l-[4rem]">
-              <div className="flex justify-between items-center mb-16">
-                <div className="p-5 bg-indigo-50 dark:bg-indigo-900/30 rounded-[2rem] text-[#3730A3] dark:text-indigo-400 shadow-inner"><BookOpen size={32} /></div>
-                <button onClick={() => setSelectedMilestone(null)} className="p-4 hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-300 hover:text-red-500 rounded-3xl transition-all"><X size={36} /></button>
-              </div>
-              <h3 className="text-5xl font-black text-[#1F2937] dark:text-white mb-4 leading-none tracking-tight">{selectedMilestone.title}</h3>
-              <p className="text-gray-400 font-bold mb-16 text-lg tracking-wide uppercase text-sm">Path Syllabus & Material</p>
-              <div className="space-y-6 flex-1 overflow-y-auto pr-4 custom-scrollbar">
-                {selectedMilestone.resources?.map((res: any, i: number) => (
-                  <motion.a key={i} href={res.url} target="_blank" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }} className="flex items-center justify-between p-8 bg-[#F8FAFC] dark:bg-slate-900 rounded-[3rem] border-2 border-transparent hover:border-[#10B981] hover:bg-white dark:hover:bg-slate-800 transition-all group">
-                    <div className="flex flex-col gap-1">
-                      <span className="font-black text-[#1F2937] dark:text-white text-xl">{res.name}</span>
-                      <span className="text-xs font-black text-[#10B981] uppercase tracking-[0.2em]">{res.type}</span>
-                    </div>
-                    <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-gray-300 group-hover:text-[#10B981] shadow-sm transition-colors"><ExternalLink size={20} /></div>
-                  </motion.a>
-                ))}
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       <motion.button whileHover={{ scale: 1.1, rotate: 5 }} whileTap={{ scale: 0.9 }} onClick={() => setIsChatOpen(true)} className="fixed bottom-10 right-10 w-20 h-20 bg-gradient-to-tr from-[#3730A3] to-[#4F46E5] text-white rounded-[2rem] shadow-[0_20px_50px_rgba(55,48,163,0.3)] flex items-center justify-center z-[80] hover:shadow-indigo-500/50 transition-all border-4 border-white dark:border-slate-800"><Sparkles size={34} fill="white" /></motion.button>
 

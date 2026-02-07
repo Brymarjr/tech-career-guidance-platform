@@ -65,13 +65,13 @@ class CareerPath(models.Model):
         ('R', 'Realistic'), ('I', 'Investigative'), ('A', 'Artistic'),
         ('S', 'Social'), ('E', 'Enterprising'), ('C', 'Conventional'),
     ]
-    trait_type = models.CharField(max_length=1, choices=RIASEC_CHOICES, unique=True)
+    trait_type = models.CharField(max_length=2, unique=True)
     title = models.CharField(max_length=255)
     description = models.TextField()
     duration = models.CharField(max_length=50) # e.g., "12 Weeks"
 
     def __str__(self):
-        return f"{self.get_trait_type_display()} - {self.title}"
+        return f"{self.trait_type} - {self.title}"
 
 
 class Milestone(models.Model):
@@ -87,8 +87,20 @@ class Milestone(models.Model):
 
 
 class UserProgress(models.Model):
+    STATUS_CHOICES = [
+        ('IN_PROGRESS', 'In Progress'),
+        ('PENDING_REVIEW', 'Pending Review'),
+        ('COMPLETED', 'Completed'),
+        ('REJECTED', 'Rejected'),
+    ]
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE)
+    submission_url = models.URLField(blank=True, null=True)
+    submission_notes = models.TextField(blank=True, null=True)
+    mentor_feedback = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='IN_PROGRESS')
+    
     is_completed = models.BooleanField(default=False)
     completed_at = models.DateTimeField(null=True, blank=True)
 
@@ -96,7 +108,7 @@ class UserProgress(models.Model):
         unique_together = ('user', 'milestone')
 
     def __str__(self):
-        return f"{self.user.username} - {self.milestone.title}"
+        return f"{self.user.username} - {self.milestone.title} ({self.status})"
     
     
 class ChatMessage(models.Model):
