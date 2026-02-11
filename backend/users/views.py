@@ -184,7 +184,18 @@ class MentorListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return CustomUser.objects.filter(role='MENTOR', is_available=True)
+        user = self.request.user
+        # 1. Get IDs of mentors who have blocked this student
+        blocked_mentor_ids = MentorshipConnection.objects.filter(
+            student=user, 
+            status='BLOCKED'
+        ).values_list('mentor_id', flat=True)
+        
+        # 2. Return mentors who are available AND haven't blocked this user
+        return CustomUser.objects.filter(
+            role='MENTOR', 
+            is_available=True
+        ).exclude(id__in=blocked_mentor_ids)
 
 
 class MentorDashboardView(APIView):
@@ -194,25 +205,24 @@ class MentorDashboardView(APIView):
         if request.user.role != 'MENTOR' and not request.user.is_staff:
             return Response({"error": "Unauthorized access."}, status=403)
         
-        # 1. Fetch Connection Requests
-        requests = MentorshipConnection.objects.filter(mentor=request.user).order_by('-created_at')
+        # 1. Fetch Connection Requests (Discovery Phase)
+        conn_requests = MentorshipConnection.objects.filter(mentor=request.user).order_by('-created_at')
         
-        # 2. STATS ENGINE LOGIC
-        # Count students currently connected via Threads
-        active_students_count = Thread.objects.filter(mentor=request.user).count()
+        # 2. ROSTER LOGIC: Fetch all students directly assigned to this mentor
+        # This includes Admin-assigned students who may not have sent a request
+        my_students = CustomUser.objects.filter(mentor=request.user).only('id', 'username', 'email', 'full_name')
         
-        # Get IDs of all students connected to this mentor to filter their progress
-        connected_student_ids = Thread.objects.filter(mentor=request.user).values_list('student_id', flat=True)
+        # 3. STATS ENGINE (Direct Mapping)
+        active_students_count = my_students.count()
+        student_ids = my_students.values_list('id', flat=True)
         
-        # Count milestones currently waiting for this mentor's review
         pending_reviews_count = UserProgress.objects.filter(
-            user_id__in=connected_student_ids, 
+            user_id__in=student_ids, 
             status='PENDING_REVIEW'
         ).count()
         
-        # Count all milestones this mentor has successfully approved (COMPLETED)
         total_approved_count = UserProgress.objects.filter(
-            user_id__in=connected_student_ids, 
+            user_id__in=student_ids, 
             status='COMPLETED'
         ).count()
 
@@ -222,7 +232,14 @@ class MentorDashboardView(APIView):
             "total_approved": total_approved_count
         }
 
-        # 3. Format Request Data
+        # 4. Format Roster Data
+        roster_list = [{
+            "id": s.id,
+            "name": s.full_name or s.username,
+            "email": s.email
+        } for s in my_students]
+
+        # 5. Format Request Data
         request_list = [{
             "id": r.id,
             "student_name": r.student.full_name or r.student.username,
@@ -230,51 +247,75 @@ class MentorDashboardView(APIView):
             "message": r.message,
             "status": r.status,
             "created_at": r.created_at
-        } for r in requests]
+        } for r in conn_requests]
 
-        # Return combined data to match the Frontend expectations
         return Response({
             "requests": request_list,
+            "roster": roster_list,
             "stats": stats_data
         })
 
     def patch(self, request, pk):
         try:
+            # This handles connection requests (Admission)
             connection = MentorshipConnection.objects.get(id=pk, mentor=request.user)
-            new_status = request.data.get('status') # 'ACCEPTED' or 'DECLINED'
+            new_status = request.data.get('status') # ACCEPTED, DECLINED, or BLOCKED
             
-            if new_status in ['ACCEPTED', 'DECLINED']:
+            if new_status in ['ACCEPTED', 'DECLINED', 'BLOCKED']:
+                # Track the old status for accurate messaging
+                old_status = connection.status
+                
                 connection.status = new_status
                 connection.save()
 
-                # --- PRO LEVEL: Thread & Notification Logic ---
-                
-                # 1. Automatic Thread Creation (Only if Accepted)
                 if new_status == 'ACCEPTED':
-                    Thread.objects.get_or_create(
-                        student=connection.student,
-                        mentor=connection.mentor
-                    )
+                    student = connection.student
+                    student.mentor = request.user
+                    student.save()
+                    Thread.objects.get_or_create(student=student, mentor=request.user)
 
-                # 2. ALWAYS Notify the Student of the outcome
+                # --- RESTORED NOTIFICATION LOGIC ---
+                msg_text = f"Mentor {request.user.username} has {new_status.lower()} your mentorship request."
+                
+                # Custom message if this was an "Unblock" action
+                if old_status == 'BLOCKED' and new_status == 'DECLINED':
+                    msg_text = f"Mentor {request.user.username} has unblocked you. You may now view their profile again."
+
                 Notification.objects.create(
                     recipient=connection.student,
-                    message=f"Mentor {request.user.username} has {new_status.lower()} your request."
+                    message=msg_text
                 )
-                # ----------------------------------------------
+                # ----------------------------------
 
                 return Response({
-                    "message": f"Request {new_status.lower()} successfully.",
+                    "message": f"Status updated to {new_status}.",
                     "status": new_status,
                     "updated_at": timezone.now()
                 })
             
             return Response({"error": "Invalid status."}, status=400)
-            
         except MentorshipConnection.DoesNotExist:
             return Response({"error": "Request not found."}, status=404)
-        except Exception as e:
-            return Response({"error": str(e)}, status=500)
+
+    def delete(self, request, pk):
+        """ Dropping a student from the roster """
+        try:
+            student = CustomUser.objects.get(id=pk, mentor=request.user)
+            student.mentor = None
+            student.save()
+            
+            # Clean up the connection record so it's fresh for future use
+            MentorshipConnection.objects.filter(student=student, mentor=request.user).update(status='DECLINED')
+            
+            # RESTORED: Notification when a student is dropped
+            Notification.objects.create(
+                recipient=student,
+                message=f"You have been unassigned from mentor {request.user.username}. You are now free to find a new mentor."
+            )
+            
+            return Response({"message": f"Student {student.username} dropped."})
+        except CustomUser.DoesNotExist:
+            return Response({"error": "Student not found in your roster."}, status=404)
 
 
 class ConnectionRequestView(APIView):
@@ -290,37 +331,37 @@ class ConnectionRequestView(APIView):
         try:
             mentor = CustomUser.objects.get(id=mentor_id, role='MENTOR')
             
-            # Check if a connection already exists
+            # Check for existing connection
             connection = MentorshipConnection.objects.filter(student=request.user, mentor=mentor).first()
 
             if connection:
-                # If they were rejected before, let them try again by resetting to PENDING
+                # NEW: Strict Block Check
+                if connection.status == 'BLOCKED':
+                    return Response({
+                        "error": "This mentor is not accepting requests from you at this time."
+                    }, status=status.HTTP_403_FORBIDDEN)
+
                 if connection.status == 'DECLINED':
                     connection.status = 'PENDING'
                     connection.message = message
-                    # We save to trigger the updated_at timestamp
                     connection.save()
                     
-                    # TRIGGER: Notify Mentor of Re-sent request
                     Notification.objects.create(
                         recipient=mentor,
                         message=f"{request.user.username} has re-sent their mentorship request."
                     )
-                    
-                    return Response({"message": "Re-sent connection request successfully!"}, status=200)
+                    return Response({"message": "Re-sent connection request successfully!"})
                 
-                # If it's already PENDING or ACCEPTED, don't allow a duplicate
-                return Response({"error": "You already have a pending or active request with this mentor."}, status=400)
+                return Response({"error": "You already have a pending or active request."}, status=400)
             
-            # If no connection exists at all, create a new one
+            # Create new if none exists
             MentorshipConnection.objects.create(
                 student=request.user,
                 mentor=mentor,
                 message=message,
                 status='PENDING'
             )
-
-            # TRIGGER: Notify Mentor of New request
+            
             Notification.objects.create(
                 recipient=mentor,
                 message=f"New mentorship request from {request.user.username}."
@@ -330,8 +371,6 @@ class ConnectionRequestView(APIView):
             
         except CustomUser.DoesNotExist:
             return Response({"error": "Mentor not found."}, status=404)
-        except Exception as e:
-            return Response({"error": str(e)}, status=500)
 
 class StudentRequestHistoryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -377,17 +416,24 @@ class AdminUserManagementView(APIView):
     def get(self, request):
         if request.user.role != 'ADMIN':
             return Response({"error": "Admin access required"}, status=403)
-        users = CustomUser.objects.all().order_by('-date_joined')
+        
+        # Optimization: select_related('mentor') avoids a database hit for every user
+        users = CustomUser.objects.all().select_related('mentor').order_by('-date_joined')
+        
         paginator = self.pagination_class()
         result_page = paginator.paginate_queryset(users, request)
+        
         data = [{
             "id": str(u.id),
             "username": u.username,
             "email": u.email,
             "role": u.role,
             "is_active": u.is_active,
-            "date_joined": u.date_joined
+            "date_joined": u.date_joined,
+            # FIXED: Now sending the mentor ID so the frontend dropdown works
+            "mentor": u.mentor.id if u.mentor else None 
         } for u in result_page]
+        
         return paginator.get_paginated_response(data)
 
     def patch(self, request, pk):
@@ -397,8 +443,18 @@ class AdminUserManagementView(APIView):
             target_user = CustomUser.objects.get(id=pk)
             new_role = request.data.get('role')
             is_active = request.data.get('is_active')
+            mentor_id = request.data.get('mentor') # Added this to catch the PATCH
+
             if new_role: target_user.role = new_role
             if is_active is not None: target_user.is_active = is_active
+            
+            # Handling Mentor Update
+            if mentor_id is not None:
+                if mentor_id == "" or mentor_id == None:
+                    target_user.mentor = None
+                else:
+                    target_user.mentor_id = mentor_id
+
             target_user.save()
             return Response({"message": f"User {target_user.username} updated."})
         except CustomUser.DoesNotExist:
@@ -553,9 +609,15 @@ class MessageView(APIView):
         if request.user != thread.student and request.user != thread.mentor:
             return Response({"error": "Unauthorized"}, status=403)
 
+        # NEW GUARD: Prevent new messages if the relationship is broken
+        # We check if the student's mentor field still points to this mentor
+        if thread.student.mentor_id != thread.mentor_id:
+            return Response({
+                "error": "This conversation is now read-only because the mentorship has ended."
+            }, status=status.HTTP_403_FORBIDDEN)
+
         serializer = MessageSerializer(data=request.data)
         if serializer.is_valid():
-            # Save message and update the thread's 'updated_at' for sorting
             serializer.save(sender=request.user, thread=thread)
             thread.save() 
             return Response(serializer.data, status=201)
@@ -567,5 +629,13 @@ class CompleteOnboardingView(APIView):
 
     def post(self, request):
         request.user.has_seen_onboarding = True
+        request.user.save()
+        return Response({"status": "success"})
+    
+    
+class MarkCelebratedView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    def post(self, request):
+        request.user.has_celebrated_mentor = True
         request.user.save()
         return Response({"status": "success"})

@@ -3,8 +3,8 @@ from rest_framework.response import Response
 from rest_framework import status, permissions, generics
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from .models import AssessmentResult, CareerPath, UserProgress, Milestone, ChatMessage, Question, LearningResource, UserAchievement
-from .serializers import QuestionSerializer, CareerPathSerializer, MilestoneSerializer, LearningResourceSerializer, StudentResourceSerializer, UserAchievementSerializer
+from .models import AssessmentResult, CareerPath, UserProgress, Milestone, ChatMessage, Question, LearningResource
+from .serializers import QuestionSerializer, CareerPathSerializer, MilestoneSerializer, LearningResourceSerializer, StudentResourceSerializer
 from .services import RIASECService
 from .ai_service import CareerMentorService
 from django.contrib.auth import get_user_model
@@ -16,21 +16,34 @@ def get_user_roadmap_context(user):
         return None
 
     trait_code = latest_result.top_trait 
-    path = CareerPath.objects.prefetch_related('milestones__resources').filter(trait_type=trait_code).first()
+    
+    # OPTIMIZATION: prefetch_related reduces database hits from ~15 to 1.
+    path = CareerPath.objects.prefetch_related(
+        'milestones__resources'
+    ).filter(trait_type=trait_code).first()
     
     if not path and trait_code:
         primary_char = trait_code[0]
-        path = CareerPath.objects.prefetch_related('milestones__resources').filter(trait_type=primary_char).first()
+        path = CareerPath.objects.prefetch_related(
+            'milestones__resources'
+        ).filter(trait_type=primary_char).first()
     
     if not path:
         return None
 
+    # Fetch all progress for this user in one hit to avoid querying inside the loop
+    user_progress_map = {
+        p.milestone_id: p for p in UserProgress.objects.filter(user=user, milestone__path=path)
+    }
+
     milestone_details = []
     completed_count = 0
+    
+    # This loop now runs entirely in memory because of the prefetch above
     for m in path.milestones.all():
-        progress = UserProgress.objects.filter(user=user, milestone=m).first()
+        progress = user_progress_map.get(m.id)
         current_status = progress.status if progress else 'IN_PROGRESS'
-        is_done = progress.is_completed if progress else False
+        is_done = (current_status == 'COMPLETED')
         
         if is_done: completed_count += 1
         
@@ -42,7 +55,6 @@ def get_user_roadmap_context(user):
             "is_completed": is_done,
             "submission_url": progress.submission_url if progress else None,
             "feedback": progress.mentor_feedback if progress else None,
-            # FIXED: Ensure consistency in resource field names
             "resources": [{"title": r.title, "url": r.url, "resource_type": r.resource_type} for r in m.resources.all()]
         })
 
@@ -183,7 +195,9 @@ class DashboardSummaryView(APIView):
                 "role": request.user.role,
                 "xp_total": request.user.xp_total, 
                 "level": request.user.level,
-                "has_seen_onboarding": request.user.has_seen_onboarding,       
+                "has_seen_onboarding": request.user.has_seen_onboarding,      
+                "mentor": request.user.mentor_id,
+                "mentor_username": request.user.mentor.username if request.user.mentor else None, 
             },
             "assessment": {
                 "top_trait": latest_result.top_trait if latest_result else None,
@@ -214,9 +228,10 @@ class PendingReviewsListView(APIView):
         if request.user.role != 'MENTOR' and not request.user.is_staff:
             return Response({"error": "Unauthorized."}, status=status.HTTP_403_FORBIDDEN)
 
-        student_ids = Thread.objects.filter(mentor=request.user).values_list('student_id', flat=True)
+        # 1. Get all students directly assigned to this mentor
+        # No more Thread filtering - we use the direct relationship
         pending_work = UserProgress.objects.filter(
-            user_id__in=student_ids,
+            user__mentor=request.user,
             status='PENDING_REVIEW'
         ).select_related('user', 'milestone', 'milestone__path').order_by('-completed_at')
 
@@ -229,7 +244,7 @@ class PendingReviewsListView(APIView):
                 "path_title": item.milestone.path.title,
                 "submission_url": item.submission_url,
                 "submission_notes": item.submission_notes,
-                "submitted_at": item.completed_at 
+                "submitted_at": item.completed_at
             })
 
         return Response(data)
@@ -238,7 +253,13 @@ class PendingReviewsListView(APIView):
 class AdminQuestionListCreateView(generics.ListCreateAPIView):
     queryset = Question.objects.all().order_by('riasec_type')
     serializer_class = QuestionSerializer
-    permission_classes = [permissions.IsAdminUser] 
+    
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            # Allow any logged-in user (student) to read the questions
+            return [permissions.IsAuthenticated()]
+        # Only Admins can POST (create) new questions
+        return [permissions.IsAdminUser()]
 
 
 class AdminQuestionDetailView(generics.RetrieveUpdateDestroyAPIView):

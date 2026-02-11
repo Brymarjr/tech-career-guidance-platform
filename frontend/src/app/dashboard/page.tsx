@@ -5,15 +5,17 @@ import api from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer, PolarRadiusAxis } from "recharts";
 import { 
-  LayoutDashboard, Award, BookOpen, ChevronRight, 
-  User, LogOut, Target, Sparkles, TrendingUp, X, ExternalLink, CheckCircle2, Send, Settings, Moon, Sun, MessageSquare, Link, ClipboardList, Loader2, Trophy, Zap, FolderGit2
+  LayoutDashboard, Award, BookOpen, User, LogOut, Target, Sparkles, TrendingUp, X, 
+  MessageSquare, Trophy, Zap, FolderGit2, PartyPopper, UserCheck, Send, Moon, Sun, ChevronRight,
+  ShieldCheck
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import NotificationBell from "@/components/NotificationBell";
-import BadgeIcon from "@/components/BadgeIcon"; // Ensure this path is correct
-import OnboardingModal from "@/components/OnboardingModal"; // Ensure this path is correct
+import BadgeIcon from "@/components/BadgeIcon"; 
+import OnboardingModal from "@/components/OnboardingModal"; 
+import confetti from "canvas-confetti";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -26,9 +28,48 @@ export default function Dashboard() {
   const [messages, setMessages] = useState<any[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
-  const [showOnboarding, setShowOnboarding] = useState(false); // NEW: Onboarding state
+  const [showOnboarding, setShowOnboarding] = useState(false); 
+  
+  // Celebration State
+  const [showCelebration, setShowCelebration] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // High-Energy Confetti Function
+  const fireConfetti = () => {
+    const end = Date.now() + 3 * 1000;
+    const colors = ["#4F46E5", "#10B981", "#F59E0B"];
+
+    (function frame() {
+      confetti({
+        particleCount: 3,
+        angle: 60,
+        spread: 55,
+        origin: { x: 0, y: 0.6 },
+        colors: colors,
+      });
+      confetti({
+        particleCount: 3,
+        angle: 120,
+        spread: 55,
+        origin: { x: 1, y: 0.6 },
+        colors: colors,
+      });
+
+      if (Date.now() < end) {
+        requestAnimationFrame(frame);
+      }
+    })();
+  };
+
+  const formatTrait = (code: string) => {
+    if (!code) return "Analyzing...";
+    const traitNames: any = {
+      'R': 'Realistic', 'I': 'Investigative', 'A': 'Artistic',
+      'S': 'Social', 'E': 'Enterprising', 'C': 'Conventional'
+    };
+    return code.split('').map(letter => traitNames[letter] || letter).join('-');
+  };
 
   const fetchDashboard = async () => {
     const token = typeof window !== "undefined" ? localStorage.getItem('access_token') : null;
@@ -36,11 +77,28 @@ export default function Dashboard() {
 
     try {
       const res = await api.get("assessments/dashboard-summary/");
+      console.log("Dashboard Sync:", res.data.user);
+
+      // --- MENTOR CELEBRATION LOGIC ---
+      if (res.data.user?.mentor && res.data.user?.has_celebrated_mentor === false) {
+        const localKey = `celebrated_${res.data.user.username}`;
+        const alreadySeenLocally = localStorage.getItem(localKey);
+
+        if (!alreadySeenLocally) {
+           console.log("Triggering Celebration!");
+           setShowCelebration(true);
+           fireConfetti();
+           localStorage.setItem(localKey, "true");
+           await api.post("users/mark-celebrated/"); 
+        }
+      }
+
       setData(res.data);
       
-      // NEW: Trigger onboarding if user hasn't seen it
       if (res.data.user && !res.data.user.has_seen_onboarding) {
         setShowOnboarding(true);
+      } else if (!res.data.assessment?.top_trait) {
+        router.push("/assessment");
       }
       
       if (res.data.assessment?.scores) {
@@ -79,32 +137,20 @@ export default function Dashboard() {
     }
   }, [user]);
 
-  // NEW: CELEBRATION TOAST LOGIC
   useEffect(() => {
     if (data?.new_achievements?.length > 0) {
       data.new_achievements.forEach((item: any) => {
         toast.custom((t) => (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.8, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            className="bg-white dark:bg-[#1E293B] border-2 border-amber-400 p-6 rounded-[2.5rem] shadow-2xl flex items-center gap-6 min-w-[350px] z-[9999]"
-          >
-            <div className="w-16 h-16 bg-amber-50 dark:bg-amber-900/30 rounded-2xl flex items-center justify-center text-amber-500 shadow-inner">
-              <BadgeIcon name={item.achievement.badge_icon} size={32} />
-            </div>
+          <motion.div initial={{ opacity: 0, scale: 0.8, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="bg-white dark:bg-[#1E293B] border-2 border-amber-400 p-6 rounded-[2.5rem] shadow-2xl flex items-center gap-6 min-w-[350px] z-[9999]">
+            <div className="w-16 h-16 bg-amber-50 dark:bg-amber-900/30 rounded-2xl flex items-center justify-center text-amber-500 shadow-inner"><BadgeIcon name={item.achievement.badge_icon} size={32} /></div>
             <div className="flex-1">
               <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">New Achievement!</p>
               <h4 className="text-lg font-black dark:text-white leading-none">{item.achievement.title}</h4>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-medium">{item.achievement.description}</p>
             </div>
-            <button onClick={() => toast.dismiss(t)} className="text-gray-300 hover:text-gray-500 transition-colors">
-              <X size={20} />
-            </button>
+            <button onClick={() => toast.dismiss(t)} className="text-gray-300 hover:text-gray-500 transition-colors"><X size={20} /></button>
           </motion.div>
-        ), { 
-          duration: 5000,
-          position: 'top-center' 
-        });
+        ), { duration: 5000, position: 'top-center' });
       });
     }
   }, [data?.new_achievements]);
@@ -130,6 +176,11 @@ export default function Dashboard() {
     }
   };
 
+  const handleOnboardingComplete = () => {
+    setShowOnboarding(false);
+    router.push("/assessment");
+  };
+
   if (!data) return (
     <div className="min-h-screen bg-[#3730A3] flex items-center justify-center">
        <motion.div animate={{ rotate: 360, scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 2 }} className="w-16 h-16 border-4 border-[#10B981] border-t-transparent rounded-full shadow-[0_0_20px_rgba(16,185,129,0.5)]" />
@@ -141,74 +192,18 @@ export default function Dashboard() {
       
       <aside className="w-80 bg-white dark:bg-[#1E293B] border-r border-gray-100 dark:border-slate-800 p-8 hidden xl:flex flex-col shadow-sm h-screen sticky top-0 z-10 transition-colors duration-500">
         <div className="mb-12 flex items-center gap-3">
-          <div className="w-12 h-12 bg-gradient-to-br from-[#3730A3] to-[#4F46E5] rounded-2xl flex items-center justify-center text-white shadow-lg transform -rotate-3">
-            <TrendingUp size={26} />
-          </div>
+          <div className="w-12 h-12 bg-gradient-to-br from-[#3730A3] to-[#4F46E5] rounded-2xl flex items-center justify-center text-white shadow-lg transform -rotate-3"><TrendingUp size={26} /></div>
           <span className="text-2xl font-black text-[#1F2937] dark:text-white tracking-tight">TechPath <span className="text-[#10B981]">Pro</span></span>
         </div>
-        
         <nav className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard")} className="flex items-center gap-4 p-4 bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400 rounded-2xl font-black shadow-sm cursor-pointer">
-            <LayoutDashboard size={22} /> Dashboard
-          </motion.div>
-          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/mentors")} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer">
-            <Target size={22} /> Find Mentors
-          </motion.div>
-          
-          <motion.div 
-            whileHover={{ x: 5 }} 
-            onClick={() => router.push("/dashboard/messages")} 
-            className="flex items-center justify-between p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"
-          >
-            <div className="flex items-center gap-4">
-              <MessageSquare size={22} /> Messages
-            </div>
-            {unreadMessages > 0 && (
-              <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce font-black">
-                {unreadMessages}
-              </span>
-            )}
-          </motion.div>
-
-          <motion.div 
-            whileHover={{ x: 5 }} 
-            onClick={() => router.push("/dashboard/roadmap")}
-            className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"
-          >
-            <Award size={22} /> Career Roadmap
-          </motion.div>
-          
-          <motion.div 
-            whileHover={{ x: 5 }} 
-            onClick={() => router.push("/dashboard/achievements")} 
-            className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"
-          >
-            <Trophy size={22} /> My Achievements
-          </motion.div>
-
-          <motion.div 
-            whileHover={{ x: 5 }} 
-            onClick={() => router.push("/dashboard/library")}
-            className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"
-          >
-            <BookOpen size={22} /> Learning Library
-          </motion.div>
-
-          <motion.div 
-            whileHover={{ x: 5 }} 
-            onClick={() => router.push("/dashboard/leaderboard")} 
-            className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"
-          >
-            <TrendingUp size={22} /> Leaderboard
-          </motion.div>
-
-          <motion.div 
-            whileHover={{ x: 5 }} 
-            onClick={() => router.push("/dashboard/portfolio")} 
-            className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"
-          >
-            <FolderGit2 size={22} /> Project Portfolio
-          </motion.div>
+          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard")} className="flex items-center gap-4 p-4 bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400 rounded-2xl font-black shadow-sm cursor-pointer"><LayoutDashboard size={22} /> Dashboard</motion.div>
+          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/mentors")} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><Target size={22} /> Find Mentors</motion.div>
+          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/messages")} className="flex items-center justify-between p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><div className="flex items-center gap-4"><MessageSquare size={22} /> Messages</div>{unreadMessages > 0 && <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce font-black">{unreadMessages}</span>}</motion.div>
+          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/roadmap")} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><Award size={22} /> Career Roadmap</motion.div>
+          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/achievements")} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><Trophy size={22} /> My Achievements</motion.div>
+          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/library")} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><BookOpen size={22} /> Learning Library</motion.div>
+          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/leaderboard")} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><TrendingUp size={22} /> Leaderboard</motion.div>
+          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/portfolio")} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><FolderGit2 size={22} /> Project Portfolio</motion.div>
         </nav>
       </aside>
 
@@ -217,64 +212,31 @@ export default function Dashboard() {
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
             <h1 className="text-5xl font-black text-[#111827] dark:text-white mb-3 tracking-tight">Hello, {data.user.username}! ✨</h1>
             <p className="text-[#6B7280] dark:text-gray-400 text-xl font-medium mb-6">Your <span className="text-[#3730A3] dark:text-indigo-400 font-bold">{data.roadmap?.title}</span> is looking strong today.</p>
-            
-            {/* LEVEL & XP PROGRESS BAR */}
             <div className="flex items-center gap-4 bg-white dark:bg-[#1E293B] p-4 rounded-3xl shadow-sm border border-gray-50 dark:border-slate-800 w-fit">
-              <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-amber-200 dark:shadow-none">
-                {data.user.level || 1}
-              </div>
+              <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-amber-200">{data.user.level || 1}</div>
               <div>
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1">
-                  <Zap size={10} className="text-amber-500 fill-amber-500" /> Current Level
-                </p>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1"><Zap size={10} className="text-amber-500 fill-amber-500" /> Current Level</p>
                 <div className="flex items-center gap-3">
-                  <div className="h-2.5 w-40 bg-gray-100 dark:bg-slate-900 rounded-full overflow-hidden p-0.5 border border-gray-50 dark:border-slate-800">
-                    <motion.div 
-                      initial={{ width: 0 }} 
-                      animate={{ width: `${((data.user.xp_total || 0) % 500) / 5}%` }} 
-                      className="h-full bg-gradient-to-r from-amber-400 to-amber-600 rounded-full" 
-                    />
-                  </div>
-                  <span className="text-[10px] font-black text-amber-600 dark:text-amber-500 whitespace-nowrap">{(data.user.xp_total || 0) % 500} / 500 XP</span>
+                  <div className="h-2.5 w-40 bg-gray-100 dark:bg-slate-900 rounded-full overflow-hidden p-0.5 border border-gray-50 dark:border-slate-800"><motion.div initial={{ width: 0 }} animate={{ width: `${((data.user.xp_total || 0) % 500) / 5}%` }} className="h-full bg-gradient-to-r from-amber-400 to-amber-600 rounded-full" /></div>
+                  <span className="text-[10px] font-black text-amber-600 whitespace-nowrap">{(data.user.xp_total || 0) % 500} / 500 XP</span>
                 </div>
               </div>
             </div>
           </motion.div>
-          
           <div className="flex items-center gap-6">
             <NotificationBell />
-
             <div className="relative">
               <div onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className="flex items-center gap-5 bg-white dark:bg-[#1E293B] p-4 pr-10 rounded-[2rem] shadow-xl border border-gray-50 dark:border-slate-800 hover:shadow-2xl transition-all cursor-pointer group z-50">
-                <div className="w-14 h-14 bg-gradient-to-tr from-[#3730A3] to-[#10B981] rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg group-hover:rotate-6 transition-transform">
-                  {data.user.username[0].toUpperCase()}
-                </div>
-                <div>
-                   <p className="font-black text-[#1F2937] dark:text-white text-lg">{data.user.username}</p>
-                   <span className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-[#3730A3] dark:text-indigo-400 rounded-full text-[10px] font-black uppercase tracking-wider">{data.user.role || 'Member'}</span>
-                </div>
+                <div className="w-14 h-14 bg-gradient-to-tr from-[#3730A3] to-[#10B981] rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg group-hover:rotate-6 transition-transform">{data.user.username[0].toUpperCase()}</div>
+                <div><p className="font-black text-[#1F2937] dark:text-white text-lg">{data.user.username}</p><span className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-[#3730A3] dark:text-indigo-400 rounded-full text-[10px] font-black uppercase tracking-wider">{data.user.role || 'Member'}</span></div>
               </div>
-
               <AnimatePresence>
                 {isUserMenuOpen && (
                   <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute right-0 mt-4 w-72 bg-white dark:bg-[#1E293B] rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-gray-50 dark:border-slate-800 p-4 z-[100] overflow-hidden">
                     <div className="space-y-2">
-                      <button onClick={() => { router.push("/dashboard/settings"); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-4 p-4 text-gray-500 dark:text-gray-400 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all">
-                        <User size={20} /> My Profile
-                      </button>
-                      <button onClick={toggleTheme} className="w-full flex items-center justify-between p-4 text-gray-500 dark:text-gray-400 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all">
-                        <div className="flex items-center gap-4">
-                          {isDarkMode ? <Sun size={20} className="text-yellow-400" /> : <Moon size={20} />}
-                          {isDarkMode ? "Light Mode" : "Dark Mode"}
-                        </div>
-                        <div className={`w-10 h-6 rounded-full p-1 transition-colors ${isDarkMode ? 'bg-[#10B981]' : 'bg-gray-200'}`}>
-                          <div className={`w-4 h-4 bg-white rounded-full transition-transform ${isDarkMode ? 'translate-x-4' : 'translate-x-0'}`} />
-                        </div>
-                      </button>
-                      <hr className="border-gray-50 dark:border-slate-800 my-2" />
-                      <button onClick={() => { logout(); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-4 p-4 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-2xl font-bold transition-all">
-                        <LogOut size={20} /> Sign Out
-                      </button>
+                      <button onClick={() => { router.push("/dashboard/settings"); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-4 p-4 text-gray-500 dark:text-gray-400 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all"><User size={20} /> My Profile</button>
+                      <button onClick={toggleTheme} className="w-full flex items-center justify-between p-4 text-gray-500 dark:text-gray-400 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all"><div className="flex items-center gap-4">{isDarkMode ? <Sun size={20} className="text-yellow-400" /> : <Moon size={20} />} {isDarkMode ? "Light Mode" : "Dark Mode"}</div><div className={`w-10 h-6 rounded-full p-1 transition-colors ${isDarkMode ? 'bg-[#10B981]' : 'bg-gray-200'}`}><div className={`w-4 h-4 bg-white rounded-full transition-transform ${isDarkMode ? 'translate-x-4' : 'translate-x-0'}`} /></div></button>
+                      <hr className="border-gray-50 dark:border-slate-800 my-2" /><button onClick={() => { logout(); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-4 p-4 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-2xl font-bold transition-all"><LogOut size={20} /> Sign Out</button>
                     </div>
                   </motion.div>
                 )}
@@ -286,21 +248,8 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-12">
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="xl:col-span-2 bg-white dark:bg-[#1E293B] p-12 rounded-[3.5rem] shadow-2xl shadow-indigo-100/50 dark:shadow-none border border-gray-50 dark:border-slate-800 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50/50 dark:bg-indigo-900/10 rounded-full blur-3xl -mr-32 -mt-32" />
-            <div className="flex justify-between items-center mb-12 relative z-10">
-              <h3 className="text-3xl font-black text-[#1F2937] dark:text-white">Interest Spectrum</h3>
-              <div className="px-6 py-2 bg-emerald-100 dark:bg-emerald-900/30 text-[#059669] dark:text-emerald-400 rounded-2xl text-xs font-black uppercase tracking-widest">Engine Active</div>
-            </div>
-            
-            <div className="h-[450px] w-full relative z-10">
-              <ResponsiveContainer width="100%" height="100%">
-                <RadarChart cx="50%" cy="50%" outerRadius="80%" data={chartData}>
-                  <PolarGrid stroke={isDarkMode ? "#334155" : "#E2E8F0"} strokeWidth={2} />
-                  <PolarAngleAxis dataKey="subject" tick={{ fill: isDarkMode ? '#94A3B8' : '#475569', fontSize: 14, fontWeight: 800 }} />
-                  <PolarRadiusAxis angle={30} domain={[0, 10]} tick={false} axisLine={false} />
-                  <Radar name="User Profile" dataKey="value" stroke="#4F46E5" strokeWidth={4} fill="#10B981" fillOpacity={0.4} />
-                </RadarChart>
-              </ResponsiveContainer>
-            </div>
+            <div className="flex justify-between items-center mb-12 relative z-10"><h3 className="text-3xl font-black text-[#1F2937] dark:text-white">Interest Spectrum</h3><div className="px-6 py-2 bg-emerald-100 dark:bg-emerald-900/30 text-[#059669] dark:text-emerald-400 rounded-2xl text-xs font-black uppercase tracking-widest">Engine Active</div></div>
+            <div className="h-[450px] w-full relative z-10"><ResponsiveContainer width="100%" height="100%"><RadarChart cx="50%" cy="50%" outerRadius="80%" data={chartData}><PolarGrid stroke={isDarkMode ? "#334155" : "#E2E8F0"} strokeWidth={2} /><PolarAngleAxis dataKey="subject" tick={{ fill: isDarkMode ? '#94A3B8' : '#475569', fontSize: 14, fontWeight: 800 }} /><PolarRadiusAxis angle={30} domain={[0, 10]} tick={false} axisLine={false} /><Radar name="User Profile" dataKey="value" stroke="#4F46E5" strokeWidth={4} fill="#10B981" fillOpacity={0.4} /></RadarChart></ResponsiveContainer></div>
           </motion.div>
 
           <div className="space-y-10">
@@ -309,122 +258,83 @@ export default function Dashboard() {
               <div className="relative z-10">
                 <div className="bg-white/20 w-fit p-5 rounded-[1.5rem] mb-8 shadow-inner"><Target size={32} /></div>
                 <h3 className="text-3xl font-black mb-3">Dominant Trait</h3>
-                <h4 className="text-[#10B981] text-3xl font-black mb-8 uppercase tracking-tighter flex items-center gap-3">
-                  <Sparkles size={28} /> {data.assessment.top_trait}
-                </h4>
-                <p className="text-indigo-100 text-lg font-medium leading-relaxed opacity-90">
-                  Your profile suggests a natural aptitude for <span className="text-white font-bold">{data.assessment.top_trait}</span> environments.
-                </p>
+                <h4 className="text-[#10B981] text-3xl font-black mb-8 uppercase tracking-tighter flex items-center gap-3"><Sparkles size={28} /> {formatTrait(data.assessment.top_trait)}</h4>
+                <p className="text-indigo-100 text-lg font-medium leading-relaxed opacity-90">Your profile suggests a natural aptitude for <span className="text-white font-bold">{formatTrait(data.assessment.top_trait)}</span> environments.</p>
               </div>
             </motion.div>
 
-            {/* ACHIEVEMENTS SECTION */}
             <div className="bg-white dark:bg-[#1E293B] p-10 rounded-[3.5rem] border border-gray-100 dark:border-slate-800 shadow-xl relative overflow-hidden">
-              <div className="flex justify-between items-center mb-8">
-                <h3 className="text-xl font-black dark:text-white flex items-center gap-3">
-                  <Trophy className="text-amber-500" size={24} /> Achievements
-                </h3>
-                <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 dark:bg-slate-800 px-3 py-1 rounded-full">
-                  {data.achievements?.length || 0} Unlocked
-                </span>
-              </div>
-
+              <div className="flex justify-between items-center mb-8"><h3 className="text-xl font-black dark:text-white flex items-center gap-3"><Trophy className="text-amber-500" size={24} /> Achievements</h3><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 dark:bg-slate-800 px-3 py-1 rounded-full">{data.achievements?.length || 0} Unlocked</span></div>
               <div className="flex flex-wrap gap-4">
                 {data.achievements && data.achievements.length > 0 ? (
                   data.achievements.map((item: any, idx: number) => (
-                    <motion.div 
-                      key={item.id || idx}
-                      whileHover={{ scale: 1.1, rotate: 5 }}
-                      className="group relative"
-                    >
-                      <div className="w-16 h-16 bg-amber-50 dark:bg-amber-900/20 rounded-2xl flex items-center justify-center text-amber-600 border border-amber-100 dark:border-amber-900/30 shadow-sm transition-all hover:shadow-amber-200/50">
-                        <BadgeIcon name={item.achievement.badge_icon} size={28} />
-                      </div>
-                      
-                      {/* Tooltip */}
-                      <div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 w-40 p-3 bg-[#111827] text-white text-[10px] rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-2xl z-50 text-center">
-                        <p className="font-black mb-1">{item.achievement.title}</p>
-                        <p className="text-gray-400 font-medium leading-tight">{item.achievement.description}</p>
-                      </div>
-                    </motion.div>
+                    <motion.div key={item.id || idx} whileHover={{ scale: 1.1, rotate: 5 }} className="group relative"><div className="w-16 h-16 bg-amber-50 dark:bg-amber-900/20 rounded-2xl flex items-center justify-center text-amber-600 border border-amber-100 dark:border-amber-900/30 shadow-sm transition-all hover:shadow-amber-200/50"><BadgeIcon name={item.achievement.badge_icon} size={28} /></div><div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 w-40 p-3 bg-[#111827] text-white text-[10px] rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-2xl z-50 text-center"><p className="font-black mb-1">{item.achievement.title}</p><p className="text-gray-400 font-medium leading-tight">{item.achievement.description}</p></div></motion.div>
                   ))
                 ) : (
-                  <div className="w-full py-6 text-center border-2 border-dashed border-gray-100 dark:border-slate-800 rounded-[2rem]">
-                    <p className="text-gray-400 font-bold italic text-sm">Complete milestones to earn badges!</p>
-                  </div>
+                  <div className="w-full py-6 text-center border-2 border-dashed border-gray-100 dark:border-slate-800 rounded-[2rem]"><p className="text-gray-400 font-bold italic text-sm">Complete milestones to earn badges!</p></div>
                 )}
               </div>
             </div>
 
             <div className="bg-white dark:bg-[#1E293B] p-12 rounded-[3.5rem] border border-gray-100 dark:border-slate-800 shadow-xl relative overflow-hidden">
-              <div className="flex items-center justify-between mb-8">
-                <h4 className="font-black text-[#1F2937] dark:text-white text-xl">Course Progress</h4>
-                <TrendingUp className="text-[#10B981]" size={24} />
-              </div>
+              <div className="flex items-center justify-between mb-8"><h4 className="font-black text-[#1F2937] dark:text-white text-xl">Course Progress</h4><TrendingUp className="text-[#10B981]" size={24} /></div>
               <div className="space-y-6">
-                <div className="flex justify-between font-black text-sm text-gray-400 uppercase tracking-widest">
-                  <span>Journey Status</span>
-                  <span className="text-[#3730A3] dark:text-indigo-400">{Math.round(data.roadmap?.completion_percentage || 0)}%</span>
-                </div>
-                <div className="h-6 w-full bg-gray-50 dark:bg-slate-900 rounded-full overflow-hidden p-1.5 border border-gray-100 dark:border-slate-800">
-                  <motion.div initial={{ width: 0 }} animate={{ width: `${data.roadmap?.completion_percentage || 0}%` }} transition={{ type: "spring", bounce: 0.4, duration: 1.5 }} className="h-full bg-gradient-to-r from-[#10B981] to-[#34D399] rounded-full shadow-[0_0_20px_rgba(16,185,129,0.4)]" />
-                </div>
+                <div className="flex justify-between font-black text-sm text-gray-400 uppercase tracking-widest"><span>Journey Status</span><span className="text-[#3730A3] dark:text-indigo-400">{Math.round(data.roadmap?.completion_percentage || 0)}%</span></div>
+                <div className="h-6 w-full bg-gray-50 dark:bg-slate-900 rounded-full overflow-hidden p-1.5 border border-gray-100 dark:border-slate-800"><motion.div initial={{ width: 0 }} animate={{ width: `${data.roadmap?.completion_percentage || 0}%` }} transition={{ type: "spring", bounce: 0.4, duration: 1.5 }} className="h-full bg-gradient-to-r from-[#10B981] to-[#34D399] rounded-full shadow-[0_0_20px_rgba(16,185,129,0.4)]" /></div>
               </div>
             </div>
           </div>
         </div>
       </main>
 
+      {/* AI Sparkle Button */}
       <motion.button whileHover={{ scale: 1.1, rotate: 5 }} whileTap={{ scale: 0.9 }} onClick={() => setIsChatOpen(true)} className="fixed bottom-10 right-10 w-20 h-20 bg-gradient-to-tr from-[#3730A3] to-[#4F46E5] text-white rounded-[2rem] shadow-[0_20px_50px_rgba(55,48,163,0.3)] flex items-center justify-center z-[80] hover:shadow-indigo-500/50 transition-all border-4 border-white dark:border-slate-800"><Sparkles size={34} fill="white" /></motion.button>
 
+      {/* AI Chat Drawer */}
       <AnimatePresence>
         {isChatOpen && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center lg:justify-end lg:pr-10">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsChatOpen(false)} className="absolute inset-0 bg-indigo-900/20 backdrop-blur-md lg:hidden" />
             <motion.div initial={{ opacity: 0, y: 100, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 100, scale: 0.9 }} className="relative w-[95%] max-w-[450px] h-[750px] bg-white dark:bg-[#1E293B] rounded-[4rem] shadow-[0_40px_100px_rgba(0,0,0,0.15)] border border-gray-100 dark:border-slate-800 flex flex-col overflow-hidden">
-              <div className="p-8 bg-[#3730A3] text-white flex justify-between items-center">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-white/20 rounded-[1.5rem] flex items-center justify-center shadow-inner"><Target size={28} /></div>
-                  <div><p className="font-black text-xl leading-none">Career Mentor</p><p className="text-xs text-indigo-200 mt-2 font-bold uppercase tracking-widest">AI Context Active</p></div>
-                </div>
-                <button onClick={() => setIsChatOpen(false)} className="hover:bg-white/10 p-3 rounded-2xl transition-colors"><X size={28} /></button>
-              </div>
+              <div className="p-8 bg-[#3730A3] text-white flex justify-between items-center"><div className="flex items-center gap-4"><div className="w-14 h-14 bg-white/20 rounded-[1.5rem] flex items-center justify-center shadow-inner"><Target size={28} /></div><div><p className="font-black text-xl leading-none">Career Mentor</p><p className="text-xs text-indigo-200 mt-2 font-bold uppercase tracking-widest">AI Context Active</p></div></div><button onClick={() => setIsChatOpen(false)} className="hover:bg-white/10 p-3 rounded-2xl transition-colors"><X size={28} /></button></div>
               <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-[#FBFBFF] dark:bg-slate-900/50 custom-scrollbar">
-                {messages.length === 0 && (
-                  <div className="text-center py-20 opacity-40">
-                    <div className="w-24 h-24 bg-indigo-100 dark:bg-indigo-900/30 text-[#3730A3] dark:text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-6"><Sparkles size={40} /></div>
-                    <p className="text-[#1F2937] dark:text-white font-black text-xl">I'm your {data.assessment.top_trait} Mentor.</p>
-                  </div>
-                )}
-                {messages.map((msg, i) => (
-                  <motion.div initial={{ opacity: 0, x: msg.role === 'user' ? 20 : -20 }} animate={{ opacity: 1, x: 0 }} key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[85%] p-6 rounded-[2rem] font-bold text-sm lg:text-base leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-[#3730A3] text-white rounded-br-none shadow-indigo-200' : 'bg-white dark:bg-slate-800 text-[#1F2937] dark:text-white border border-gray-100 dark:border-slate-700 rounded-bl-none shadow-gray-100'}`}>{msg.content}</div>
-                  </motion.div>
-                ))}
-                {isTyping && (
-                  <div className="flex justify-start">
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-gray-100 dark:border-slate-700 flex gap-2 shadow-sm">
-                      <motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1 }} className="w-2.5 h-2.5 bg-indigo-200 rounded-full" />
-                      <motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-2.5 h-2.5 bg-indigo-300 rounded-full" />
-                      <motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-2.5 h-2.5 bg-indigo-400 rounded-full" />
-                    </div>
-                  </div>
-                )}
+                {messages.length === 0 && (<div className="text-center py-20 opacity-40"><div className="w-24 h-24 bg-indigo-100 dark:bg-indigo-900/30 text-[#3730A3] dark:text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-6"><Sparkles size={40} /></div><p className="text-[#1F2937] dark:text-white font-black text-xl">I'm your {formatTrait(data.assessment.top_trait)} Mentor.</p></div>)}
+                {messages.map((msg, i) => (<motion.div initial={{ opacity: 0, x: msg.role === 'user' ? 20 : -20 }} animate={{ opacity: 1, x: 0 }} key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[85%] p-6 rounded-[2rem] font-bold text-sm lg:text-base leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-[#3730A3] text-white rounded-br-none shadow-indigo-200' : 'bg-white dark:bg-slate-800 text-[#1F2937] dark:text-white border border-gray-100 dark:border-slate-700 rounded-bl-none shadow-gray-100'}`}>{msg.content}</div></motion.div>))}
+                {isTyping && (<div className="flex justify-start"><div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-gray-100 dark:border-slate-700 flex gap-2 shadow-sm"><motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1 }} className="w-2.5 h-2.5 bg-indigo-200 rounded-full" /><motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-2.5 h-2.5 bg-indigo-300 rounded-full" /><motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-2.5 h-2.5 bg-indigo-400 rounded-full" /></div></div>)}
                 <div ref={chatEndRef} />
               </div>
-              <form onSubmit={handleSendMessage} className="p-8 bg-white dark:bg-[#1E293B] border-t border-gray-50 dark:border-slate-800 flex gap-4">
-                <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder="Ask for advice..." className="flex-1 p-5 bg-gray-50 dark:bg-slate-900 rounded-[1.5rem] outline-none focus:ring-4 ring-indigo-50 transition-all font-bold dark:text-white" />
-                <button type="submit" className="p-5 bg-[#10B981] text-white rounded-[1.5rem] hover:bg-[#059669] shadow-xl transition-all"><Send size={24} /></button>
-              </form>
+              <form onSubmit={handleSendMessage} className="p-8 bg-white dark:bg-[#1E293B] border-t border-gray-50 dark:border-slate-800 flex gap-4"><input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder="Ask for advice..." className="flex-1 p-5 bg-gray-50 dark:bg-slate-900 rounded-[1.5rem] outline-none focus:ring-4 ring-indigo-50 transition-all font-bold dark:text-white" /><button type="submit" className="p-5 bg-[#10B981] text-white rounded-[1.5rem] hover:bg-[#059669] shadow-xl transition-all"><Send size={24} /></button></form>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* NEW: Conditional Onboarding Modal */}
-      {showOnboarding && (
-        <OnboardingModal onComplete={() => setShowOnboarding(false)} />
-      )}
+      {/* MENTOR SUCCESS MODAL */}
+      <AnimatePresence>
+        {showCelebration && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowCelebration(false)} className="absolute inset-0 bg-[#0F172A]/80 backdrop-blur-xl" />
+            <motion.div initial={{ scale: 0.8, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.8, opacity: 0, y: 20 }} className="relative bg-white dark:bg-[#1E293B] w-full max-w-lg p-12 rounded-[4rem] shadow-2xl border border-white/10 text-center overflow-hidden">
+               <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.2, 0.1] }} transition={{ repeat: Infinity, duration: 4 }} className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-indigo-500/20 to-emerald-500/20" />
+               <div className="relative z-10">
+                 <div className="w-24 h-24 bg-gradient-to-tr from-[#10B981] to-[#34D399] rounded-[2rem] flex items-center justify-center text-white mx-auto mb-8 shadow-2xl shadow-emerald-500/30"><UserCheck size={48} /></div>
+                 <h2 className="text-4xl font-black dark:text-white mb-4 tracking-tighter">Mentor Assigned! 🚀</h2>
+                 <p className="text-gray-500 dark:text-gray-400 font-medium text-lg mb-10 leading-relaxed">Great news! Your career growth just leveled up. You've been matched with a professional mentor to guide your journey.</p>
+                 <div className="bg-gray-50 dark:bg-slate-900/50 p-6 rounded-[2.5rem] mb-10 border border-gray-100 dark:border-slate-800 text-left">
+                    <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Your New Guide</p>
+                    <div className="flex items-center gap-4">
+                       <div className="w-12 h-12 bg-[#3730A3] text-white rounded-2xl flex items-center justify-center font-black text-xl">{data.user?.mentor_username?.[0].toUpperCase() || 'M'}</div>
+                       <div><p className="font-black dark:text-white leading-none">{data.user?.mentor_username || "Mentor"}</p><p className="text-xs text-gray-400 font-bold mt-1 uppercase tracking-tight">Technical Expert</p></div>
+                    </div>
+                 </div>
+                 <button onClick={() => setShowCelebration(false)} className="w-full py-6 bg-[#3730A3] text-white rounded-[2rem] font-black text-xl shadow-2xl shadow-indigo-500/40 hover:scale-[1.02] transition-all">Let's Get Started</button>
+               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {showOnboarding && (<OnboardingModal onComplete={handleOnboardingComplete} />)}
     </div>
   );
 }

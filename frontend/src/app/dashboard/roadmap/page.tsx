@@ -21,17 +21,20 @@ export default function CareerRoadmapPage() {
   const [submissionUrl, setSubmissionUrl] = useState("");
   const [submissionNotes, setSubmissionNotes] = useState("");
 
-  const fetchRoadmap = async () => {
+  const fetchRoadmap = async (silent = false) => {
     try {
       const res = await api.get("assessments/dashboard-summary/");
       setData(res.data);
-      
+    
+      // Update the selected milestone data if the drawer is open
       if (selectedMilestone) {
-        const updatedMilestone = res.data.roadmap.milestones.find((m: any) => m.id === selectedMilestone.id);
+        const updatedMilestone = res.data.roadmap.milestones.find(
+          (m: any) => m.id === selectedMilestone.id
+        );
         if (updatedMilestone) setSelectedMilestone(updatedMilestone);
       }
     } catch (err) {
-      toast.error("Failed to load roadmap");
+      if (!silent) toast.error("Failed to load roadmap");
     }
   };
 
@@ -54,8 +57,12 @@ export default function CareerRoadmapPage() {
       toast.success("Submitted for mentor review!");
       setSubmissionUrl("");
       setSubmissionNotes("");
+    
+      // OPTIMIZATION: Call fetchRoadmap(true) to update UI without a full reload/flicker
+      await fetchRoadmap(true);
+
       setSelectedMilestone(null);
-      fetchRoadmap();
+
     } catch (err) {
       toast.error("Submission failed");
     } finally {

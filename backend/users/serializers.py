@@ -5,7 +5,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = ('id', 'email', 'username', 'password', 'role', 
-                  'full_name', 'bio', 'skills', 'career_interest')
+                  'full_name', 'bio', 'skills', 'career_interest', 'mentor')
         extra_kwargs = {'password': {'write_only': True}}
 
     def create(self, validated_data):
@@ -43,32 +43,41 @@ class ThreadSerializer(serializers.ModelSerializer):
     other_user = serializers.SerializerMethodField()
     last_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
+    is_active = serializers.SerializerMethodField() 
+    student_name = serializers.ReadOnlyField(source='student.username') # For UI context
+    mentor_name = serializers.ReadOnlyField(source='mentor.username')   # For UI context
 
     class Meta:
         model = Thread
-        fields = ['id', 'other_user', 'last_message', 'unread_count', 'updated_at']
+        fields = [
+            'id', 'other_user', 'last_message', 'unread_count', 
+            'updated_at', 'is_active', 'student_name', 'mentor_name'
+        ]
         
+    def get_is_active(self, obj):
+        """
+        Logic: A thread is active ONLY if the student's mentor field 
+        is still set to the mentor in this thread.
+        """
+        return obj.student.mentor_id == obj.mentor_id
+
     def get_unread_count(self, obj):
         request_user = self.context['request'].user
-        # Count messages where the requester is NOT the sender and is_read is False
         return obj.messages.filter(is_read=False).exclude(sender=request_user).count()
 
     def get_other_user(self, obj):
         request_user = self.context['request'].user
         other = obj.mentor if obj.student == request_user else obj.student
         
-        # PRO-FIX: Bypass all pre-fetching. Query the DB directly for THIS user.
         from django.utils import timezone
         import datetime
         from .models import CustomUser
 
-        # Fetch the very latest activity directly from the table
         latest_data = CustomUser.objects.filter(id=other.id).values('last_activity').first()
         actual_last_activity = latest_data['last_activity'] if latest_data else None
 
         is_online = False
         if actual_last_activity:
-            # If active in the last 2 minutes, show as online
             is_online = timezone.now() < actual_last_activity + datetime.timedelta(minutes=2)
 
         return {
@@ -77,7 +86,7 @@ class ThreadSerializer(serializers.ModelSerializer):
             "full_name": other.full_name,
             "role": other.role,
             "is_online": is_online,
-            "last_seen": actual_last_activity # This is now the raw DB value
+            "last_seen": actual_last_activity
         }
 
     def get_last_message(self, obj):

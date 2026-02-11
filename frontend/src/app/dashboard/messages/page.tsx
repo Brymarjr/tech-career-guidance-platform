@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, MessageSquare, ArrowLeft, Loader2, CheckCheck, ChevronLeft } from "lucide-react";
+import { Send, MessageSquare, ArrowLeft, Loader2, CheckCheck, ChevronLeft, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
@@ -17,20 +17,19 @@ export default function InboxPage() {
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0); // NEW: Force re-render key
+  const [refreshKey, setRefreshKey] = useState(0); 
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const fetchThreads = async () => {
     try {
-      // Use a timestamp to kill ANY browser-level caching
       const res = await api.get(`users/threads/?v=${Date.now()}`);
       setThreads(res.data);
-      setRefreshKey(prev => prev + 1); // Increment to force UI update
+      setRefreshKey(prev => prev + 1); 
 
       if (activeThread) {
         const refreshed = res.data.find((t: any) => t.id === activeThread.id);
         if (refreshed) {
-            setActiveThread({...refreshed}); // Spread operator ensures a new object reference
+            setActiveThread({...refreshed}); 
         }
       }
     } catch (err) {
@@ -51,7 +50,6 @@ export default function InboxPage() {
 
   useEffect(() => {
     fetchThreads();
-    // Refresh thread list every 10 seconds for real-time online status
     const threadInterval = setInterval(fetchThreads, 10000);
     return () => clearInterval(threadInterval);
   }, [activeThread?.id]);
@@ -80,8 +78,12 @@ export default function InboxPage() {
       setMessages([...messages, res.data]);
       setNewMessage("");
       fetchThreads(); 
-    } catch (err) {
-      toast.error("Message failed to send.");
+    } catch (err: any) {
+      if (err.response?.status === 403) {
+        toast.error("Mentorship has ended. This thread is now read-only.");
+      } else {
+        toast.error("Message failed to send.");
+      }
     } finally {
       setSending(false);
     }
@@ -124,7 +126,6 @@ export default function InboxPage() {
                 <div className="flex justify-between items-start mb-1">
                   <div className="flex items-center gap-2">
                     <h3 className="font-black dark:text-white">{t.other_user.full_name || t.other_user.username}</h3>
-                    {/* SIDEBAR ONLINE DOT */}
                     {t.other_user.is_online && (
                       <span className="w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.6)] animate-pulse" />
                     )}
@@ -152,7 +153,7 @@ export default function InboxPage() {
         {activeThread ? (
           <>
             <header 
-              key={`header-${activeThread.other_user.last_seen}`} // Forces React to re-render header on time change
+              key={`header-${activeThread.other_user.last_seen}`} 
               className="p-6 bg-white dark:bg-[#1E293B] border-b border-gray-100 dark:border-slate-800 flex items-center gap-4"
             >
               <button onClick={() => setActiveThread(null)} className="md:hidden p-2 text-gray-500"><ArrowLeft /></button>
@@ -161,8 +162,6 @@ export default function InboxPage() {
               </div>
               <div>
                 <h2 className="font-black text-lg dark:text-white">{activeThread.other_user.full_name || activeThread.other_user.username}</h2>
-                
-                {/* HEADER STATUS */}
                 {activeThread.other_user.is_online ? (
                     <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Online Now
@@ -206,23 +205,35 @@ export default function InboxPage() {
               <div ref={scrollRef} />
             </div>
 
-            <form onSubmit={handleSendMessage} className="p-8 bg-white dark:bg-[#1E293B] border-t border-gray-100 dark:border-slate-800">
-              <div className="flex gap-4 items-center bg-gray-50 dark:bg-slate-900 p-2 rounded-[2.5rem] border-2 border-transparent focus-within:border-indigo-500 transition-all">
-                <input
-                  type="text"
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder="Type your message..."
-                  className="flex-1 bg-transparent p-4 outline-none dark:text-white font-medium"
-                />
-                <button
-                  disabled={sending}
-                  className="bg-[#3730A3] text-white p-4 rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
-                >
-                  {sending ? <Loader2 className="animate-spin" /> : <Send size={20} />}
-                </button>
+            {/* UPDATED: Read-Only Check logic */}
+            {activeThread.is_active === false ? (
+              <div className="p-8 bg-gray-50 dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800 flex flex-col items-center gap-2">
+                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-500 font-black uppercase text-[10px] tracking-widest">
+                  <ShieldAlert size={16} /> Read-Only Archive
+                </div>
+                <p className="text-gray-400 text-sm font-medium italic text-center">
+                  Mentorship between {activeThread.student_name} and {activeThread.mentor_name} has ended.
+                </p>
               </div>
-            </form>
+            ) : (
+              <form onSubmit={handleSendMessage} className="p-8 bg-white dark:bg-[#1E293B] border-t border-gray-100 dark:border-slate-800">
+                <div className="flex gap-4 items-center bg-gray-50 dark:bg-slate-900 p-2 rounded-[2.5rem] border-2 border-transparent focus-within:border-indigo-500 transition-all">
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    placeholder="Type your message..."
+                    className="flex-1 bg-transparent p-4 outline-none dark:text-white font-medium"
+                  />
+                  <button
+                    disabled={sending}
+                    className="bg-[#3730A3] text-white p-4 rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                  >
+                    {sending ? <Loader2 className="animate-spin" /> : <Send size={20} />}
+                  </button>
+                </div>
+              </form>
+            )}
           </>
         ) : (
           <div className="text-center">

@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
-from .views import LoginView, RegisterView, RequestPasswordResetView, VerifyOTPView, ConfirmPasswordResetView, ProfileView, MentorListView, ConnectionRequestView,MentorDashboardView, AdminGlobalStatsView, AdminUserManagementView, ExportAuditLogView, SystemHealthView, StudentRequestHistoryView, StudentNotificationView, MentorNotificationView, NotificationView, ThreadListView, MessageView, CompleteOnboardingView
+from .views import LoginView, RegisterView, RequestPasswordResetView, VerifyOTPView, ConfirmPasswordResetView, ProfileView, MentorListView, ConnectionRequestView,MentorDashboardView, AdminGlobalStatsView, AdminUserManagementView, ExportAuditLogView, SystemHealthView, StudentRequestHistoryView, StudentNotificationView, MentorNotificationView, NotificationView, ThreadListView, MessageView, CompleteOnboardingView, MarkCelebratedView
 
 urlpatterns = [
     
@@ -14,7 +14,8 @@ urlpatterns = [
     path('mentors/', MentorListView.as_view(), name='mentor-list'),
     path('connect/', ConnectionRequestView.as_view(), name='mentor-connect'),
     path('mentor-dashboard/', MentorDashboardView.as_view(), name='mentor-dashboard'),
-    path('mentor-dashboard/<int:pk>/', MentorDashboardView.as_view(), name='mentor-action'),
+    path('mentor-dashboard/<uuid:pk>/', MentorDashboardView.as_view(), name='mentor-action'),
+    path('mentor-dashboard/<int:pk>/', MentorDashboardView.as_view()),
     path('admin/stats/', AdminGlobalStatsView.as_view(), name='admin-global-stats'),
     path('admin/users/', AdminUserManagementView.as_view(), name='admin-user-list'),
     path('admin/users/<uuid:pk>/', AdminUserManagementView.as_view(), name='admin-user-detail'),
@@ -28,5 +29,6 @@ urlpatterns = [
     path('threads/', ThreadListView.as_view(), name='thread-list'),
     path('threads/<int:thread_id>/messages/', MessageView.as_view(), name='thread-messages'),
     path('complete-onboarding/', CompleteOnboardingView.as_view(), name='complete-onboarding'),
+    path('mark-celebrated/', MarkCelebratedView.as_view(), name='mark-celebrated'),
     
 ]

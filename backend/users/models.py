@@ -47,6 +47,15 @@ class CustomUser(AbstractUser):
     xp_total = models.IntegerField(default=0)
     level = models.IntegerField(default=1)
     has_seen_onboarding = models.BooleanField(default=False)
+    mentor = models.ForeignKey(
+        'self', 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='students',
+        limit_choices_to={'role': 'MENTOR'}
+    )
+    has_celebrated_mentor = models.BooleanField(default=False)
 
     objects = CustomUserManager()
 

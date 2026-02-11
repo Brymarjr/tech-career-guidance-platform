@@ -7,7 +7,7 @@ import {
   Users, UserCheck, ShieldAlert, Download, Search, 
   ShieldCheck, LogOut, Sun, Moon, Database, Server, 
   ChevronLeft, ChevronRight, UserPlus, HelpCircle, Map, Plus, Trash2, X, Loader2, CheckCircle2,
-  Link as LinkIcon, Video, FileText, BookOpen, ClipboardList // ADDED THIS IMPORT
+  Link as LinkIcon, Video, FileText, BookOpen, ClipboardList
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -331,12 +331,31 @@ export default function AdminDashboard() {
                 <div className="relative w-full md:w-96"><Search className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-300" size={20} /><input type="text" placeholder="Search registry..." className="w-full pl-14 pr-8 py-4 bg-white dark:bg-slate-900 border-2 border-gray-100 dark:border-slate-800 rounded-[1.5rem] outline-none focus:border-indigo-500 dark:text-white font-bold transition-all shadow-inner" onChange={(e) => setSearchTerm(e.target.value)}/></div>
               </div>
               <div className="overflow-x-auto"><table className="w-full text-left">
-                <thead><tr className="text-gray-400 font-black text-xs uppercase tracking-[0.2em] border-b dark:border-slate-800"><th className="p-12">Identify</th><th className="p-12">Role Assignment</th><th className="p-12">Account Status</th><th className="p-12 text-right">Actions</th></tr></thead>
+                <thead><tr className="text-gray-400 font-black text-xs uppercase tracking-[0.2em] border-b dark:border-slate-800"><th className="p-12">Identify</th><th className="p-12">Role Assignment</th><th className="p-12">Mentor Assignment</th><th className="p-12">Account Status</th><th className="p-12 text-right">Actions</th></tr></thead>
                 <tbody className="divide-y dark:divide-slate-800">{users.filter(u => u.username.toLowerCase().includes(searchTerm.toLowerCase())).map((u) => (
-                  <tr key={u.id} className="hover:bg-indigo-50/30 transition-colors group"><td className="p-12"><div className="flex items-center gap-5"><div className="w-14 h-14 bg-gradient-to-br from-indigo-50 to-white dark:from-slate-800 dark:to-slate-900 text-indigo-900 rounded-2xl flex items-center justify-center font-black text-xl border border-indigo-100 shadow-sm">{u.username[0].toUpperCase()}</div><div><p className="font-black text-[#1F2937] dark:text-white text-lg">{u.username}</p><p className="text-sm text-gray-400 font-bold">{u.email}</p></div></div></td>
-                  <td><select value={u.role} onChange={(e) => handleUpdateUser(u.id, { role: e.target.value })} className="bg-gray-50 dark:bg-slate-900 dark:text-white border-2 border-gray-100 dark:border-slate-800 rounded-2xl px-6 py-3 font-black text-sm outline-none cursor-pointer appearance-none text-[#3730A3] dark:text-indigo-400"><option value="STUDENT">Student</option><option value="MENTOR">Mentor</option><option value="ADMIN">Admin</option></select></td>
-                  <td><span className={`px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest ${u.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>{u.is_active ? 'Active' : 'Suspended'}</span></td>
-                  <td className="p-12 text-right"><button onClick={() => handleUpdateUser(u.id, { is_active: !u.is_active })} className={`p-4 rounded-2xl transition-all shadow-md ${u.is_active ? 'bg-red-50 text-red-400 hover:bg-red-500 hover:text-white' : 'bg-emerald-50 text-emerald-500 hover:bg-emerald-500 hover:text-white'}`}>{u.is_active ? <ShieldAlert size={24} /> : <UserPlus size={24} />}</button></td></tr>
+                  <tr key={u.id} className="hover:bg-indigo-50/30 transition-colors group">
+                    <td className="p-12"><div className="flex items-center gap-5"><div className="w-14 h-14 bg-gradient-to-br from-indigo-50 to-white dark:from-slate-800 dark:to-slate-900 text-indigo-900 rounded-2xl flex items-center justify-center font-black text-xl border border-indigo-100 shadow-sm">{u.username[0].toUpperCase()}</div><div><p className="font-black text-[#1F2937] dark:text-white text-lg">{u.username}</p><p className="text-sm text-gray-400 font-bold">{u.email}</p></div></div></td>
+                    <td><select value={u.role} onChange={(e) => handleUpdateUser(u.id, { role: e.target.value })} className="bg-gray-50 dark:bg-slate-900 dark:text-white border-2 border-gray-100 dark:border-slate-800 rounded-2xl px-6 py-3 font-black text-sm outline-none cursor-pointer appearance-none text-[#3730A3] dark:text-indigo-400"><option value="STUDENT">Student</option><option value="MENTOR">Mentor</option><option value="ADMIN">Admin</option></select></td>
+                    {/* NEW MENTOR COLUMN ADDED HERE */}
+                    <td className="p-12">
+                      {u.role === 'STUDENT' ? (
+                        <select 
+                          value={u.mentor?.id || u.mentor || ""} 
+                          onChange={(e) => handleUpdateUser(u.id, { mentor: e.target.value || null })}
+                          className="bg-gray-50 dark:bg-slate-900 dark:text-white border-2 border-gray-100 dark:border-slate-800 rounded-2xl px-6 py-3 font-black text-xs outline-none cursor-pointer appearance-none text-indigo-600 dark:text-indigo-400 shadow-sm"
+                        >
+                          <option value="">Unassigned</option>
+                          {users.filter(m => m.role === 'MENTOR').map(mentor => (
+                            <option key={mentor.id} value={mentor.id}>{mentor.username}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-gray-300 dark:text-slate-700 font-bold text-xs italic">N/A</span>
+                      )}
+                    </td>
+                    <td><span className={`px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest ${u.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>{u.is_active ? 'Active' : 'Suspended'}</span></td>
+                    <td className="p-12 text-right"><button onClick={() => handleUpdateUser(u.id, { is_active: !u.is_active })} className={`p-4 rounded-2xl transition-all shadow-md ${u.is_active ? 'bg-red-50 text-red-400 hover:bg-red-500 hover:text-white' : 'bg-emerald-50 text-emerald-500 hover:bg-emerald-500 hover:text-white'}`}>{u.is_active ? <ShieldAlert size={24} /> : <UserPlus size={24} />}</button></td>
+                  </tr>
                 ))}</tbody>
               </table></div>
               <div className="p-10 bg-gray-50/50 dark:bg-slate-900/30 flex justify-between items-center transition-colors duration-500"><button disabled={page === 1} onClick={() => setPage(page - 1)} className="flex items-center gap-2 p-4 bg-white dark:bg-slate-800 rounded-2xl shadow-sm disabled:opacity-30 font-bold dark:text-white transition-all hover:bg-indigo-50"><ChevronLeft size={20} /> Previous</button><span className="font-black dark:text-white uppercase tracking-widest text-sm text-gray-400">Page {page} of {totalPages}</span><button disabled={page === totalPages} onClick={() => setPage(page + 1)} className="flex items-center gap-2 p-4 bg-white dark:bg-slate-800 rounded-2xl shadow-sm disabled:opacity-30 font-bold dark:text-white transition-all hover:bg-indigo-50">Next <ChevronRight size={20} /></button></div>
@@ -379,13 +398,7 @@ export default function AdminDashboard() {
         {selectedPath && (
           <div className="fixed inset-0 z-[120] flex items-center justify-end">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedPath(null)} className="absolute inset-0 bg-black/60 backdrop-blur-xl" />
-            <motion.div 
-              initial={{ x: '100%' }} 
-              animate={{ x: 0 }} 
-              exit={{ x: '100%' }} 
-              transition={{ type: "spring", damping: 30 }} 
-              className="relative w-full max-w-4xl h-full bg-white dark:bg-[#0F172A] p-12 lg:p-16 flex flex-col shadow-2xl rounded-none"
-            >
+            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: "spring", damping: 30 }} className="relative w-full max-w-4xl h-full bg-white dark:bg-[#0F172A] p-12 lg:p-16 flex flex-col shadow-2xl rounded-none">
               <div className="flex justify-between items-center mb-10">
                 <div className="p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl text-[#3730A3]"><ClipboardList size={28} /></div>
                 <button onClick={() => setSelectedPath(null)} className="p-4 hover:bg-red-50 text-gray-300 hover:text-red-500 rounded-2xl transition-all"><X size={36} /></button>
