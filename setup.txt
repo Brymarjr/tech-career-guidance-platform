@@ -3,6 +3,8 @@ Two terminals
 Backend:
 
 1.  cd backend    to enter the backend directory
+a.  Only run this command once to seed in the initial data     python manage.py seed_data
+
 2.  source venv/bin/activate    to start the virtual environment
 3.  run    sudo service postgresql start    to start the database
 4.  run    python manage.py runserver   to start the backend server
