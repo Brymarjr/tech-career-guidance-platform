@@ -1,0 +1,24 @@
+Two terminals
+
+Backend:
+
+1.  cd backend    to enter the backend directory
+2.  source venv/bin/activate    to start the virtual environment
+3.  run    sudo service postgresql start    to start the database
+4.  run    python manage.py runserver   to start the backend server
+
+
+Frontend:
+
+1. cd frontend to enter the frontend directory
+2. run    npm run dev   to start the frontend server
+
+
+
+Troubleshooting:
+
+Incase wsl crashes and cannot reconnect, reload the window and connect again, if that fails and is showing some kind of error logs,
+ close vscode and open powershell and run it as administrator.
+
+  Type this command:    wsl --shutdown
+  and hit enter, then launch vscode again and connect to wsl

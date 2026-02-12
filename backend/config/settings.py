@@ -94,7 +94,7 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'tech_career_db',
-        'USER': 'generaluser',  
+        'USER': 'postgres',  
         'PASSWORD': 'brymarjr',      # The password you set for pgAdmin
         'HOST': 'localhost',             # WSL2 usually shares localhost with Windows
         'PORT': '5432',
