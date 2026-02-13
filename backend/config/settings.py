@@ -10,28 +10,38 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
-from pathlib import Path
-from datetime import timedelta
+
+
 import os
-from dotenv import load_dotenv
+from pathlib import Path
+import environ  # We'll use this for everything
+from datetime import timedelta
 
-load_dotenv() # This loads the variables from .env
+# 1. Initialize environ
+env = environ.Env(
+    DEBUG=(bool, False) # Sets a default if DEBUG isn't in .env
+)
 
-# Now assign the key so your code can access it via settings.OPENAI_API_KEY
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+# 2. Build paths
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# 3. Read the .env file
+environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
+
+# 4. Now assign your variables using the 'env' object
+
+
+OPENAI_API_KEY = env('OPENAI_API_KEY')
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-blm)7$ymhu%9mco-w%(4d4i-()al+u23w2h&ezfa-0m)re1vp*'
+SECRET_KEY = env('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env('DEBUG')
 
 ALLOWED_HOSTS = []
 
@@ -91,14 +101,7 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'tech_career_db',
-        'USER': 'generaluser',  
-        'PASSWORD': 'brymarjr',      # The password you set for pgAdmin
-        'HOST': 'localhost',             # WSL2 usually shares localhost with Windows
-        'PORT': '5432',
-    }
+    'default': env.db(),
 }
 
 
