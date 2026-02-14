@@ -4,7 +4,10 @@ import { useState, useEffect, useRef } from "react";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, MessageSquare, ArrowLeft, Loader2, CheckCheck, ChevronLeft, ShieldAlert } from "lucide-react";
+import { 
+  Send, MessageSquare, ArrowLeft, Loader2, CheckCheck, 
+  ChevronLeft, ShieldAlert, ListChecks, Plus, X, Target, Award, Clock 
+} from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
@@ -20,6 +23,12 @@ export default function InboxPage() {
   const [refreshKey, setRefreshKey] = useState(0); 
   const scrollRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<WebSocket | null>(null);
+
+  // --- NEW: Task System States ---
+  const [showTasks, setShowTasks] = useState(false);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [taskData, setTaskData] = useState({ title: "", description: "", xp_reward: 100 });
 
   const fetchThreads = async () => {
     try {
@@ -49,6 +58,22 @@ export default function InboxPage() {
     }
   };
 
+  // --- NEW: Fetch Tasks Logic ---
+  const fetchTasks = async () => {
+    if (!activeThread) return;
+    try {
+      const res = await api.get('users/tasks/');
+      // Filter tasks to show only those between current user and the person in the active thread
+      const filtered = res.data.filter((t: any) => 
+        t.student_username === activeThread.other_user.username || 
+        t.mentor_username === activeThread.other_user.username
+      );
+      setTasks(filtered);
+    } catch (err) {
+      console.error("Task sync error");
+    }
+  };
+
   // WebSocket for Real-time Messages
   useEffect(() => {
     if (activeThread && user) {
@@ -71,13 +96,12 @@ export default function InboxPage() {
 
   useEffect(() => {
     fetchThreads();
-    // Removed interval: WebSockets now handle the "Online" state updates
   }, [activeThread?.id]);
 
   useEffect(() => {
     if (activeThread) {
       fetchMessages(activeThread.id);
-      // Removed interval: Messages are now pushed via socketRef
+      fetchTasks(); // NEW: Fetch tasks when thread opens
     }
   }, [activeThread?.id]);
 
@@ -89,7 +113,6 @@ export default function InboxPage() {
     e.preventDefault();
     if (!newMessage.trim() || !activeThread) return;
 
-    // Use WebSocket for sending if open, fallback to API
     if (socketRef.current?.readyState === WebSocket.OPEN) {
         socketRef.current.send(JSON.stringify({ 'message': newMessage }));
         setNewMessage("");
@@ -111,6 +134,30 @@ export default function InboxPage() {
         } finally {
           setSending(false);
         }
+    }
+  };
+
+  // --- NEW: Task Handlers ---
+  const handleCreateTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.post('users/tasks/', { ...taskData, student: activeThread.other_user.id });
+      toast.success("Task assigned successfully!");
+      setShowTaskForm(false);
+      setTaskData({ title: "", description: "", xp_reward: 100 });
+      fetchTasks();
+    } catch (err) {
+      toast.error("Error assigning task.");
+    }
+  };
+
+  const handleUpdateTask = async (taskId: number, status: string) => {
+    try {
+      await api.patch(`users/tasks/${taskId}/update/`, { status });
+      toast.success(`Task ${status.toLowerCase()}!`);
+      fetchTasks();
+    } catch (err) {
+      toast.error("Action failed.");
     }
   };
 
@@ -174,101 +221,209 @@ export default function InboxPage() {
         </div>
       </aside>
 
-      <main className={`flex-1 flex flex-col relative ${!activeThread ? 'hidden md:flex items-center justify-center' : 'flex'}`}>
-        {activeThread ? (
-          <>
-            <header 
-              key={`header-${activeThread.other_user.last_seen}`} 
-              className="p-6 bg-white dark:bg-[#1E293B] border-b border-gray-100 dark:border-slate-800 flex items-center gap-4"
-            >
-              <button onClick={() => setActiveThread(null)} className="md:hidden p-2 text-gray-500"><ArrowLeft /></button>
-              <div className="w-12 h-12 bg-indigo-500 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg">
-                {activeThread.other_user.username[0].toUpperCase()}
-              </div>
-              <div>
-                <h2 className="font-black text-lg dark:text-white">{activeThread.other_user.full_name || activeThread.other_user.username}</h2>
-                {activeThread.other_user.is_online ? (
-                    <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Online Now
-                    </span>
-                ) : (
-                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
-                        Last seen {activeThread.other_user.last_seen ? new Date(activeThread.other_user.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'recently'}
-                    </span>
-                )}
-              </div>
-            </header>
-
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
-              {messages.map((m) => {
-                const isMe = m.sender_username === user?.username;
-                return (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                    key={m.id}
-                    className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div className={`max-w-[70%] p-5 rounded-[2rem] shadow-sm ${
-                      isMe 
-                        ? 'bg-[#3730A3] text-white rounded-br-none' 
-                        : 'bg-white dark:bg-[#1E293B] dark:text-gray-200 border border-gray-100 dark:border-slate-800 rounded-bl-none'
-                    }`}>
-                      <p className="font-medium leading-relaxed">{m.content}</p>
-                      <div className={`flex items-center gap-2 mt-2 text-[10px] ${isMe ? 'text-indigo-200' : 'text-gray-400'}`}>
-                        {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {isMe && (
-                          <CheckCheck 
-                            size={14} 
-                            className={m.is_read ? "text-emerald-400" : "opacity-40"} 
-                          />
-                        )}
-                      </div>
+      <div className="flex-1 flex overflow-hidden">
+        <main className={`flex-1 flex flex-col relative ${!activeThread ? 'hidden md:flex items-center justify-center' : 'flex'}`}>
+          {activeThread ? (
+            <>
+              <header 
+                key={`header-${activeThread.other_user.last_seen}`} 
+                className="p-6 bg-white dark:bg-[#1E293B] border-b border-gray-100 dark:border-slate-800 flex items-center justify-between"
+              >
+                <div className="flex items-center gap-4">
+                    <button onClick={() => setActiveThread(null)} className="md:hidden p-2 text-gray-500"><ArrowLeft /></button>
+                    <div className="w-12 h-12 bg-indigo-500 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg">
+                    {activeThread.other_user.username[0].toUpperCase()}
                     </div>
-                  </motion.div>
-                );
-              })}
-              <div ref={scrollRef} />
-            </div>
+                    <div>
+                    <h2 className="font-black text-lg dark:text-white">{activeThread.other_user.full_name || activeThread.other_user.username}</h2>
+                    {activeThread.other_user.is_online ? (
+                        <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Online Now
+                        </span>
+                    ) : (
+                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+                            Last seen {activeThread.other_user.last_seen ? new Date(activeThread.other_user.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'recently'}
+                        </span>
+                    )}
+                    </div>
+                </div>
 
-            {activeThread.is_active === false ? (
-              <div className="p-8 bg-gray-50 dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800 flex flex-col items-center gap-2">
-                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-500 font-black uppercase text-[10px] tracking-widest">
-                  <ShieldAlert size={16} /> Read-Only Archive
-                </div>
-                <p className="text-gray-400 text-sm font-medium italic text-center">
-                  Mentorship between {activeThread.student_name} and {activeThread.mentor_name} has ended.
-                </p>
+                {/* NEW: Toggle Tasks Button */}
+                <button 
+                    onClick={() => setShowTasks(!showTasks)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-2xl font-bold text-xs transition-all ${
+                        showTasks ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-indigo-50 text-indigo-600 dark:bg-slate-800'
+                    }`}
+                >
+                    <ListChecks size={18} /> {showTasks ? 'Hide Tasks' : 'View Path Tasks'}
+                </button>
+              </header>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+                {messages.map((m) => {
+                  const isMe = m.sender_username === user?.username;
+                  return (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                      key={m.id}
+                      className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className={`max-w-[70%] p-5 rounded-[2rem] shadow-sm ${
+                        isMe 
+                          ? 'bg-[#3730A3] text-white rounded-br-none' 
+                          : 'bg-white dark:bg-[#1E293B] dark:text-gray-200 border border-gray-100 dark:border-slate-800 rounded-bl-none'
+                      }`}>
+                        <p className="font-medium leading-relaxed">{m.content}</p>
+                        <div className={`flex items-center gap-2 mt-2 text-[10px] ${isMe ? 'text-indigo-200' : 'text-gray-400'}`}>
+                          {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {isMe && (
+                            <CheckCheck 
+                              size={14} 
+                              className={m.is_read ? "text-emerald-400" : "opacity-40"} 
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+                <div ref={scrollRef} />
               </div>
-            ) : (
-              <form onSubmit={handleSendMessage} className="p-8 bg-white dark:bg-[#1E293B] border-t border-gray-100 dark:border-slate-800">
-                <div className="flex gap-4 items-center bg-gray-50 dark:bg-slate-900 p-2 rounded-[2.5rem] border-2 border-transparent focus-within:border-indigo-500 transition-all">
-                  <input
-                    type="text"
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder="Type your message..."
-                    className="flex-1 bg-transparent p-4 outline-none dark:text-white font-medium"
-                  />
-                  <button
-                    disabled={sending}
-                    className="bg-[#3730A3] text-white p-4 rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
-                  >
-                    {sending ? <Loader2 className="animate-spin" /> : <Send size={20} />}
-                  </button>
+
+              {activeThread.is_active === false ? (
+                <div className="p-8 bg-gray-50 dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800 flex flex-col items-center gap-2">
+                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-500 font-black uppercase text-[10px] tracking-widest">
+                    <ShieldAlert size={16} /> Read-Only Archive
+                  </div>
+                  <p className="text-gray-400 text-sm font-medium italic text-center">
+                    Mentorship between {activeThread.student_name} and {activeThread.mentor_name} has ended.
+                  </p>
                 </div>
-              </form>
-            )}
-          </>
-        ) : (
-          <div className="text-center">
-            <div className="w-24 h-24 bg-indigo-50 dark:bg-slate-800 rounded-[2.5rem] flex items-center justify-center text-indigo-500 mx-auto mb-6 shadow-inner">
-              <MessageSquare size={48} />
+              ) : (
+                <form onSubmit={handleSendMessage} className="p-8 bg-white dark:bg-[#1E293B] border-t border-gray-100 dark:border-slate-800">
+                  <div className="flex gap-4 items-center bg-gray-50 dark:bg-slate-900 p-2 rounded-[2.5rem] border-2 border-transparent focus-within:border-indigo-500 transition-all">
+                    <input
+                      type="text"
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      placeholder="Type your message..."
+                      className="flex-1 bg-transparent p-4 outline-none dark:text-white font-medium"
+                    />
+                    <button
+                      disabled={sending}
+                      className="bg-[#3730A3] text-white p-4 rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      {sending ? <Loader2 className="animate-spin" /> : <Send size={20} />}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </>
+          ) : (
+            <div className="text-center">
+              <div className="w-24 h-24 bg-indigo-50 dark:bg-slate-800 rounded-[2.5rem] flex items-center justify-center text-indigo-500 mx-auto mb-6 shadow-inner">
+                <MessageSquare size={48} />
+              </div>
+              <h2 className="text-2xl font-black dark:text-white">Select a contact</h2>
+              <p className="text-gray-500 dark:text-gray-400 mt-2">Pick a thread to continue your career growth.</p>
             </div>
-            <h2 className="text-2xl font-black dark:text-white">Select a contact</h2>
-            <p className="text-gray-500 dark:text-gray-400 mt-2">Pick a thread to continue your career growth.</p>
-          </div>
-        )}
-      </main>
+          )}
+        </main>
+
+        {/* NEW: Task Manager Sidebar */}
+        <AnimatePresence>
+          {showTasks && activeThread && (
+            <motion.aside 
+                initial={{ x: 320 }} animate={{ x: 0 }} exit={{ x: 320 }}
+                className="w-80 bg-white dark:bg-[#1E293B] border-l border-gray-100 dark:border-slate-800 flex flex-col h-full shadow-2xl"
+            >
+                <div className="p-8 border-b border-gray-50 dark:border-slate-800">
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-2xl font-black dark:text-white flex items-center gap-2">
+                           <Target className="text-indigo-500" /> Tasks
+                        </h2>
+                        {user?.role === 'MENTOR' && (
+                            <button 
+                                onClick={() => setShowTaskForm(!showTaskForm)}
+                                className="p-2 bg-indigo-600 text-white rounded-xl shadow-lg hover:rotate-90 transition-all duration-300"
+                            >
+                                {showTaskForm ? <X size={20} /> : <Plus size={20} />}
+                            </button>
+                        )}
+                    </div>
+
+                    {showTaskForm && (
+                        <motion.form 
+                            initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                            onSubmit={handleCreateTask} 
+                            className="space-y-3 bg-gray-50 dark:bg-slate-900 p-4 rounded-3xl border border-indigo-100 dark:border-indigo-900/50"
+                        >
+                            <input 
+                                className="w-full bg-white dark:bg-slate-800 p-3 rounded-2xl text-xs outline-none border border-transparent focus:border-indigo-500 transition-all" 
+                                placeholder="Task Title"
+                                value={taskData.title}
+                                onChange={(e) => setTaskData({...taskData, title: e.target.value})}
+                                required 
+                            />
+                            <textarea 
+                                className="w-full bg-white dark:bg-slate-800 p-3 rounded-2xl text-xs outline-none border border-transparent focus:border-indigo-500 transition-all h-24" 
+                                placeholder="What needs to be done?"
+                                value={taskData.description}
+                                onChange={(e) => setTaskData({...taskData, description: e.target.value})}
+                                required
+                            />
+                            <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg">Assign Task</button>
+                        </motion.form>
+                    )}
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                    {tasks.length === 0 ? (
+                        <div className="text-center py-12">
+                            <Clock className="mx-auto text-gray-200 mb-4" size={40} />
+                            <p className="text-gray-400 font-bold text-sm">No tasks assigned yet.</p>
+                        </div>
+                    ) : (
+                        tasks.map((task) => (
+                            <div key={task.id} className="p-5 bg-white dark:bg-[#0F172A] rounded-[2rem] border-2 border-gray-50 dark:border-slate-800 shadow-sm relative overflow-hidden">
+                                <div className="flex justify-between items-center mb-3">
+                                    <span className={`text-[9px] font-black px-2 py-1 rounded-full uppercase tracking-tighter ${
+                                        task.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'
+                                    }`}>
+                                        {task.status}
+                                    </span>
+                                    <div className="flex items-center gap-1 text-indigo-500 font-black text-[10px]">
+                                        <Award size={14} /> +{task.xp_reward} XP
+                                    </div>
+                                </div>
+                                <h3 className="font-black text-gray-800 dark:text-white text-sm leading-tight">{task.title}</h3>
+                                <p className="text-xs text-gray-500 mt-2 leading-relaxed">{task.description}</p>
+                                
+                                {user?.role === 'STUDENT' && task.status === 'PENDING' && (
+                                    <button 
+                                        onClick={() => handleUpdateTask(task.id, 'COMPLETED')}
+                                        className="w-full mt-4 bg-gray-900 dark:bg-indigo-600 text-white py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest"
+                                    >
+                                        Mark as Finished
+                                    </button>
+                                )}
+
+                                {user?.role === 'MENTOR' && task.status === 'COMPLETED' && (
+                                    <button 
+                                        onClick={() => handleUpdateTask(task.id, 'APPROVED')}
+                                        className="w-full mt-4 bg-emerald-500 text-white py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg"
+                                    >
+                                        Approve Submission
+                                    </button>
+                                )}
+                            </div>
+                        ))
+                    )}
+                </div>
+            </motion.aside>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
-from .views import LoginView, RegisterView, RequestPasswordResetView, VerifyOTPView, ConfirmPasswordResetView, ProfileView, MentorListView, ConnectionRequestView,MentorDashboardView, AdminGlobalStatsView, AdminUserManagementView, ExportAuditLogView, SystemHealthView, StudentRequestHistoryView, StudentNotificationView, MentorNotificationView, NotificationView, ThreadListView, MessageView, CompleteOnboardingView, MarkCelebratedView
+from .views import LoginView, RegisterView, RequestPasswordResetView, VerifyOTPView, ConfirmPasswordResetView, ProfileView, MentorListView, ConnectionRequestView,MentorDashboardView, AdminGlobalStatsView, AdminUserManagementView, ExportAuditLogView, SystemHealthView, StudentRequestHistoryView, StudentNotificationView, MentorNotificationView, NotificationView, ThreadListView, MessageView, CompleteOnboardingView, MarkCelebratedView, MentorTaskListCreateView, MentorTaskUpdateStatusView
 
 urlpatterns = [
     
@@ -30,5 +30,7 @@ urlpatterns = [
     path('threads/<int:thread_id>/messages/', MessageView.as_view(), name='thread-messages'),
     path('complete-onboarding/', CompleteOnboardingView.as_view(), name='complete-onboarding'),
     path('mark-celebrated/', MarkCelebratedView.as_view(), name='mark-celebrated'),
+    path('tasks/', MentorTaskListCreateView.as_view(), name='mentor-tasks-list'),
+    path('tasks/<int:task_id>/update/', MentorTaskUpdateStatusView.as_view(), name='mentor-task-update'),
     
 ]

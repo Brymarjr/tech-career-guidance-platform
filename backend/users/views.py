@@ -20,8 +20,8 @@ from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .serializers import UserSerializer, MentorPublicSerializer, ThreadSerializer, MessageSerializer
-from .models import CustomUser, PasswordResetOTP, MentorshipConnection, Notification, Thread, Message
+from .serializers import UserSerializer, MentorPublicSerializer, ThreadSerializer, MessageSerializer, MentorTaskSerializer
+from .models import CustomUser, PasswordResetOTP, MentorshipConnection, Notification, Thread, MentorTask
 from assessments.models import UserProgress
 
 
@@ -639,3 +639,60 @@ class MarkCelebratedView(APIView):
         request.user.has_celebrated_mentor = True
         request.user.save()
         return Response({"status": "success"})
+    
+    
+class MentorTaskListCreateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        # Mentors see tasks they gave; Students see tasks they received
+        if request.user.role == 'MENTOR':
+            tasks = MentorTask.objects.filter(mentor=request.user)
+        else:
+            tasks = MentorTask.objects.filter(student=request.user)
+        
+        serializer = MentorTaskSerializer(tasks, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        if request.user.role != 'MENTOR':
+            return Response({"error": "Only mentors can assign tasks"}, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = MentorTaskSerializer(data=request.data)
+        if serializer.is_valid():
+            # Manually assign the mentor to the logged-in user
+            serializer.save(mentor=request.user)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class MentorTaskUpdateStatusView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def patch(self, request, task_id):
+        task = get_object_or_404(MentorTask, id=task_id)
+        new_status = request.data.get('status')
+        feedback = request.data.get('mentor_feedback', '')
+
+        # 1. Student marks as COMPLETED
+        if new_status == 'COMPLETED':
+            if request.user != task.student:
+                return Response({"error": "Only the assigned student can complete this"}, status=status.HTTP_403_FORBIDDEN)
+            task.status = 'COMPLETED'
+
+        # 2. Mentor marks as APPROVED or REDO
+        elif new_status in ['APPROVED', 'REDO']:
+            if request.user != task.mentor:
+                return Response({"error": "Only the mentor can review this task"}, status=status.HTTP_403_FORBIDDEN)
+            
+            task.status = new_status
+            task.mentor_feedback = feedback
+            
+            # Award XP on approval
+            if new_status == 'APPROVED':
+                task.student.add_xp(task.xp_reward)
+
+        else:
+            return Response({"error": "Invalid status update"}, status=status.HTTP_400_BAD_REQUEST)
+
+        task.save()
+        return Response(MentorTaskSerializer(task).data)

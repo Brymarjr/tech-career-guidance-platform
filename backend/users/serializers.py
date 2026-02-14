@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, Thread, Message
+from .models import CustomUser, Thread, Message, MentorTask
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -99,3 +99,17 @@ class ThreadSerializer(serializers.ModelSerializer):
                 "sender_id": str(last_msg.sender.id)
             }
         return None
+    
+    
+class MentorTaskSerializer(serializers.ModelSerializer):
+    student_username = serializers.ReadOnlyField(source='student.username')
+    mentor_username = serializers.ReadOnlyField(source='mentor.username')
+
+    class Meta:
+        model = MentorTask
+        fields = [
+            'id', 'mentor', 'student', 'student_username', 'mentor_username', 
+            'title', 'description', 'due_date', 'status', 'xp_reward', 
+            'mentor_feedback', 'created_at'
+        ]
+        read_only_fields = ['mentor', 'status', 'created_at']

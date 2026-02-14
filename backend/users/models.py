@@ -184,3 +184,29 @@ class Message(models.Model):
 
     def __str__(self):
         return f"From {self.sender.username} at {self.created_at}"
+    
+    
+class MentorTask(models.Model):
+    STATUS_CHOICES = (
+        ('PENDING', 'Pending'),
+        ('COMPLETED', 'Completed'), # Set by Student
+        ('APPROVED', 'Approved'),   # Set by Mentor (Awards XP)
+        ('REDO', 'Needs Revision'), # Set by Mentor
+    )
+
+    mentor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='assigned_tasks')
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='received_tasks')
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    due_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    xp_reward = models.PositiveIntegerField(default=100)
+    mentor_feedback = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.title} - {self.student.username}"

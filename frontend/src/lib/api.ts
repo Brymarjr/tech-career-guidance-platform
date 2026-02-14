@@ -18,4 +18,11 @@ export const toggleMilestone = async (milestoneId: number) => {
   return response.data;
 };
 
+// --- New Mentor Task Endpoints ---
+export const getTasks = () => api.get('users/tasks/');
+export const createTask = (data: { student: string; title: string; description: string; xp_reward: number }) => 
+  api.post('users/tasks/', data);
+export const updateTaskStatus = (taskId: number, data: { status: string; mentor_feedback?: string }) => 
+  api.patch(`users/tasks/${taskId}/update/`, data);
+
 export default api;
