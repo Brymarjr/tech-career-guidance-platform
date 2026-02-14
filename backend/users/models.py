@@ -44,6 +44,8 @@ class CustomUser(AbstractUser):
     years_of_experience = models.PositiveIntegerField(default=0)
     is_available = models.BooleanField(default=True)
     last_activity = models.DateTimeField(null=True, blank=True)
+    is_online_status = models.BooleanField(default=False)
+    last_seen = models.DateTimeField(null=True, blank=True)
     xp_total = models.IntegerField(default=0)
     level = models.IntegerField(default=1)
     has_seen_onboarding = models.BooleanField(default=False)
@@ -75,14 +77,15 @@ class CustomUser(AbstractUser):
         return round(avg, 1) if avg else 0.0
     
     @property
-    def is_online(self):
-        if self.last_activity:
-            # If the user was active in the last 5 minutes, consider them online
-            return timezone.now() < self.last_activity + datetime.timedelta(minutes=5)
+    def is_currently_online(self):
+        """
+        Hard check for WebSocket status. 
+        Falls back to last_activity if socket is disconnected but active within 2 mins.
+        """
+        # Must have the socket status AND have been active in the last 60 seconds
+        if self.is_online_status and self.last_activity:
+            return timezone.now() < self.last_activity + datetime.timedelta(seconds=60)
         return False
-
-    def __str__(self):
-        return f"{self.email} ({self.role})"
     
     
 class MentorshipConnection(models.Model):

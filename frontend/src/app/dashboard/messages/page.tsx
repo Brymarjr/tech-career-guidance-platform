@@ -19,6 +19,7 @@ export default function InboxPage() {
   const [sending, setSending] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0); 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const socketRef = useRef<WebSocket | null>(null);
 
   const fetchThreads = async () => {
     try {
@@ -48,17 +49,35 @@ export default function InboxPage() {
     }
   };
 
+  // WebSocket for Real-time Messages
+  useEffect(() => {
+    if (activeThread && user) {
+      const token = localStorage.getItem('access_token');
+      const wsUrl = `ws://localhost:8000/ws/chat/${activeThread.id}/?token=${token}`;
+      
+      socketRef.current = new WebSocket(wsUrl);
+
+      socketRef.current.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.message) {
+            setMessages((prev) => [...prev, data.message]);
+            fetchThreads(); // Refresh thread list for last message preview
+        }
+      };
+
+      return () => socketRef.current?.close();
+    }
+  }, [activeThread?.id]);
+
   useEffect(() => {
     fetchThreads();
-    const threadInterval = setInterval(fetchThreads, 10000);
-    return () => clearInterval(threadInterval);
+    // Removed interval: WebSockets now handle the "Online" state updates
   }, [activeThread?.id]);
 
   useEffect(() => {
     if (activeThread) {
       fetchMessages(activeThread.id);
-      const interval = setInterval(() => fetchMessages(activeThread.id), 5000);
-      return () => clearInterval(interval);
+      // Removed interval: Messages are now pushed via socketRef
     }
   }, [activeThread?.id]);
 
@@ -70,22 +89,28 @@ export default function InboxPage() {
     e.preventDefault();
     if (!newMessage.trim() || !activeThread) return;
 
-    setSending(true);
-    try {
-      const res = await api.post(`users/threads/${activeThread.id}/messages/`, {
-        content: newMessage,
-      });
-      setMessages([...messages, res.data]);
-      setNewMessage("");
-      fetchThreads(); 
-    } catch (err: any) {
-      if (err.response?.status === 403) {
-        toast.error("Mentorship has ended. This thread is now read-only.");
-      } else {
-        toast.error("Message failed to send.");
-      }
-    } finally {
-      setSending(false);
+    // Use WebSocket for sending if open, fallback to API
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
+        socketRef.current.send(JSON.stringify({ 'message': newMessage }));
+        setNewMessage("");
+    } else {
+        setSending(true);
+        try {
+          const res = await api.post(`users/threads/${activeThread.id}/messages/`, {
+            content: newMessage,
+          });
+          setMessages([...messages, res.data]);
+          setNewMessage("");
+          fetchThreads(); 
+        } catch (err: any) {
+          if (err.response?.status === 403) {
+            toast.error("Mentorship has ended. This thread is now read-only.");
+          } else {
+            toast.error("Message failed to send.");
+          }
+        } finally {
+          setSending(false);
+        }
     }
   };
 
@@ -205,7 +230,6 @@ export default function InboxPage() {
               <div ref={scrollRef} />
             </div>
 
-            {/* UPDATED: Read-Only Check logic */}
             {activeThread.is_active === false ? (
               <div className="p-8 bg-gray-50 dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800 flex flex-col items-center gap-2">
                 <div className="flex items-center gap-2 text-amber-600 dark:text-amber-500 font-black uppercase text-[10px] tracking-widest">

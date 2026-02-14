@@ -1,4 +1,5 @@
 import { AuthProvider } from '@/context/AuthContext';
+import { PresenceProvider } from '@/context/PresenceContext'; // New Import
 import { Toaster } from 'sonner';
 import './globals.css';
 
@@ -18,8 +19,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="antialiased transition-colors duration-300">
         <AuthProvider>
-          {children}
-          <Toaster position="top-center" richColors closeButton />
+          <PresenceProvider> {/* Integrated Presence Tracking */}
+            {children}
+            <Toaster position="top-center" richColors closeButton />
+          </PresenceProvider>
         </AuthProvider>
       </body>
     </html>

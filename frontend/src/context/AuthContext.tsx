@@ -72,6 +72,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const logout = () => {
+    // 1. Manually trigger a window event that the PresenceProvider can hear
+    window.dispatchEvent(new Event("force-logout"));
+
+    // 2. Existing logout logic
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
