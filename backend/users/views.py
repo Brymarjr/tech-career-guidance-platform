@@ -20,9 +20,11 @@ from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .serializers import UserSerializer, MentorPublicSerializer, ThreadSerializer, MessageSerializer, MentorTaskSerializer
+from .serializers import UserSerializer, MentorPublicSerializer, ThreadSerializer, MessageSerializer, MentorTaskSerializer, NotificationSerializer
 from .models import CustomUser, PasswordResetOTP, MentorshipConnection, Notification, Thread, MentorTask
 from assessments.models import UserProgress
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 
 User = get_user_model()
@@ -550,13 +552,9 @@ class NotificationView(APIView):
 
     def get(self, request):
         notes = Notification.objects.filter(recipient=request.user).order_by('-created_at')[:10]
-        data = [{
-            "id": n.id,
-            "message": n.message,
-            "is_read": n.is_read,
-            "created_at": n.created_at.strftime("%H:%M")
-        } for n in notes]
-        return Response(data)
+        # Use the serializer instead of a manual list comprehension
+        serializer = NotificationSerializer(notes, many=True)
+        return Response(serializer.data)
 
     def patch(self, request, pk=None):
         if pk:
@@ -657,11 +655,30 @@ class MentorTaskListCreateView(APIView):
     def post(self, request):
         if request.user.role != 'MENTOR':
             return Response({"error": "Only mentors can assign tasks"}, status=status.HTTP_403_FORBIDDEN)
-        
+    
         serializer = MentorTaskSerializer(data=request.data)
         if serializer.is_valid():
-            # Manually assign the mentor to the logged-in user
-            serializer.save(mentor=request.user)
+            # 1. Save the task
+            task = serializer.save(mentor=request.user)
+        
+            # 2. CREATE the database notification so it appears in the dropdown
+            Notification.objects.create(
+                recipient=task.student,
+                message=f"New task assigned: {task.title}"
+            )
+        
+            # 3. TRIGGER REAL-TIME NOTIFICATION via WebSocket
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                "presence_tracking",
+                {
+                    "type": "task_notification",
+                    "recipient_id": str(task.student.id),
+                    "message": f"New task assigned: {task.title}",
+                    "mentor_name": request.user.username
+                }
+            )
+        
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -672,27 +689,40 @@ class MentorTaskUpdateStatusView(APIView):
         task = get_object_or_404(MentorTask, id=task_id)
         new_status = request.data.get('status')
         feedback = request.data.get('mentor_feedback', '')
+        
+        recipient = None
+        notif_message = ""
 
-        # 1. Student marks as COMPLETED
         if new_status == 'COMPLETED':
             if request.user != task.student:
-                return Response({"error": "Only the assigned student can complete this"}, status=status.HTTP_403_FORBIDDEN)
+                return Response({"error": "Unauthorized"}, status=403)
             task.status = 'COMPLETED'
+            recipient = task.mentor
+            notif_message = f"{task.student.username} completed: {task.title}"
 
-        # 2. Mentor marks as APPROVED or REDO
         elif new_status in ['APPROVED', 'REDO']:
             if request.user != task.mentor:
-                return Response({"error": "Only the mentor can review this task"}, status=status.HTTP_403_FORBIDDEN)
-            
+                return Response({"error": "Unauthorized"}, status=403)
             task.status = new_status
             task.mentor_feedback = feedback
+            recipient = task.student
+            notif_message = f"Task '{task.title}' was {new_status.lower()}!"
             
-            # Award XP on approval
             if new_status == 'APPROVED':
                 task.student.add_xp(task.xp_reward)
 
-        else:
-            return Response({"error": "Invalid status update"}, status=status.HTTP_400_BAD_REQUEST)
-
         task.save()
+
+        # Trigger the Bell Notification via WebSocket
+        if recipient:
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                "presence_tracking",
+                {
+                    "type": "bell_notification",
+                    "recipient_id": str(recipient.id),
+                    "message": notif_message,
+                }
+            )
+
         return Response(MentorTaskSerializer(task).data)

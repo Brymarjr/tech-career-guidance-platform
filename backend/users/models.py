@@ -5,6 +5,8 @@ from django.conf import settings
 from django.utils import timezone
 import datetime
 from django.db.models import Avg
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, username, password=None, **extra_fields):
@@ -137,6 +139,24 @@ class Notification(models.Model):
     message = models.TextField()
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+        if is_new:
+            # Automatically push to WebSocket whenever a new notification is created
+            try:
+                channel_layer = get_channel_layer()
+                async_to_sync(channel_layer.group_send)(
+                    "presence_tracking",
+                    {
+                        "type": "bell_notification", # Handled in PresenceConsumer
+                        "recipient_id": str(self.recipient.id),
+                        "message": self.message,
+                    }
+                )
+            except Exception as e:
+                print(f"WebSocket notification failed: {e}")
 
     def __str__(self):
         return f"Note for {self.recipient.username}: {self.message[:20]}"

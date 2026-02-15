@@ -24,11 +24,18 @@ export default function InboxPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<WebSocket | null>(null);
 
-  // --- NEW: Task System States ---
+  // --- Task System States ---
   const [showTasks, setShowTasks] = useState(false);
   const [tasks, setTasks] = useState<any[]>([]);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [taskData, setTaskData] = useState({ title: "", description: "", xp_reward: 100 });
+
+  // Listen for global "Open Tasks" event
+  useEffect(() => {
+    const handleOpenSidebar = () => setShowTasks(true);
+    window.addEventListener("open-task-sidebar", handleOpenSidebar);
+    return () => window.removeEventListener("open-task-sidebar", handleOpenSidebar);
+  }, []);
 
   const fetchThreads = async () => {
     try {
@@ -58,12 +65,10 @@ export default function InboxPage() {
     }
   };
 
-  // --- NEW: Fetch Tasks Logic ---
   const fetchTasks = async () => {
     if (!activeThread) return;
     try {
       const res = await api.get('users/tasks/');
-      // Filter tasks to show only those between current user and the person in the active thread
       const filtered = res.data.filter((t: any) => 
         t.student_username === activeThread.other_user.username || 
         t.mentor_username === activeThread.other_user.username
@@ -74,7 +79,7 @@ export default function InboxPage() {
     }
   };
 
-  // WebSocket for Real-time Messages
+  // WebSocket for Real-time Messages & Read Receipts
   useEffect(() => {
     if (activeThread && user) {
       const token = localStorage.getItem('access_token');
@@ -82,11 +87,27 @@ export default function InboxPage() {
       
       socketRef.current = new WebSocket(wsUrl);
 
+      socketRef.current.onopen = () => {
+        // Signal the server to mark existing messages as read
+        socketRef.current?.send(JSON.stringify({ type: 'read_messages' }));
+      };
+
       socketRef.current.onmessage = (e) => {
         const data = JSON.parse(e.data);
+        
+        // Handle new incoming messages
         if (data.message) {
             setMessages((prev) => [...prev, data.message]);
-            fetchThreads(); // Refresh thread list for last message preview
+            fetchThreads();
+            // If the message is from someone else while we are active, mark it read
+            if (data.message.sender_username !== user.username) {
+                socketRef.current?.send(JSON.stringify({ type: 'read_messages' }));
+            }
+        }
+        
+        // Handle Read Receipt Signal (The Blue Ticks)
+        if (data.type === 'MESSAGES_READ') {
+            setMessages(prev => prev.map(m => ({ ...m, is_read: true })));
         }
       };
 
@@ -101,7 +122,7 @@ export default function InboxPage() {
   useEffect(() => {
     if (activeThread) {
       fetchMessages(activeThread.id);
-      fetchTasks(); // NEW: Fetch tasks when thread opens
+      fetchTasks();
     }
   }, [activeThread?.id]);
 
@@ -127,7 +148,7 @@ export default function InboxPage() {
           fetchThreads(); 
         } catch (err: any) {
           if (err.response?.status === 403) {
-            toast.error("Mentorship has ended. This thread is now read-only.");
+            toast.error("Mentorship has ended.");
           } else {
             toast.error("Message failed to send.");
           }
@@ -137,7 +158,6 @@ export default function InboxPage() {
     }
   };
 
-  // --- NEW: Task Handlers ---
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -208,9 +228,9 @@ export default function InboxPage() {
                 </div>
                 
                 <div className="flex justify-between items-center mt-2">
-                  <p className="text-sm text-gray-500 truncate flex-1">{t.last_message?.content || "Start a conversation..."}</p>
+                  <p className="text-sm text-gray-500 truncate flex-1 font-medium">{t.last_message?.content || "Start a conversation..."}</p>
                   {t.unread_count > 0 && (
-                    <span className="w-5 h-5 bg-[#3730A3] text-white text-[10px] flex items-center justify-center rounded-full font-black shadow-lg">
+                    <span className="w-5 h-5 bg-[#3730A3] text-white text-[10px] flex items-center justify-center rounded-full font-black shadow-lg animate-bounce">
                       {t.unread_count}
                     </span>
                   )}
@@ -225,10 +245,7 @@ export default function InboxPage() {
         <main className={`flex-1 flex flex-col relative ${!activeThread ? 'hidden md:flex items-center justify-center' : 'flex'}`}>
           {activeThread ? (
             <>
-              <header 
-                key={`header-${activeThread.other_user.last_seen}`} 
-                className="p-6 bg-white dark:bg-[#1E293B] border-b border-gray-100 dark:border-slate-800 flex items-center justify-between"
-              >
+              <header className="p-6 bg-white dark:bg-[#1E293B] border-b border-gray-100 dark:border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <button onClick={() => setActiveThread(null)} className="md:hidden p-2 text-gray-500"><ArrowLeft /></button>
                     <div className="w-12 h-12 bg-indigo-500 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg">
@@ -248,7 +265,6 @@ export default function InboxPage() {
                     </div>
                 </div>
 
-                {/* NEW: Toggle Tasks Button */}
                 <button 
                     onClick={() => setShowTasks(!showTasks)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-2xl font-bold text-xs transition-all ${
@@ -279,7 +295,7 @@ export default function InboxPage() {
                           {isMe && (
                             <CheckCheck 
                               size={14} 
-                              className={m.is_read ? "text-emerald-400" : "opacity-40"} 
+                              className={m.is_read ? "text-sky-400 drop-shadow-[0_0_2px_rgba(56,189,248,0.8)]" : "opacity-40"} 
                             />
                           )}
                         </div>
@@ -290,34 +306,23 @@ export default function InboxPage() {
                 <div ref={scrollRef} />
               </div>
 
-              {activeThread.is_active === false ? (
-                <div className="p-8 bg-gray-50 dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800 flex flex-col items-center gap-2">
-                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-500 font-black uppercase text-[10px] tracking-widest">
-                    <ShieldAlert size={16} /> Read-Only Archive
-                  </div>
-                  <p className="text-gray-400 text-sm font-medium italic text-center">
-                    Mentorship between {activeThread.student_name} and {activeThread.mentor_name} has ended.
-                  </p>
+              <form onSubmit={handleSendMessage} className="p-8 bg-white dark:bg-[#1E293B] border-t border-gray-100 dark:border-slate-800">
+                <div className="flex gap-4 items-center bg-gray-50 dark:bg-slate-900 p-2 rounded-[2.5rem] border-2 border-transparent focus-within:border-indigo-500 transition-all">
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    placeholder="Type your message..."
+                    className="flex-1 bg-transparent p-4 outline-none dark:text-white font-medium"
+                  />
+                  <button
+                    disabled={sending}
+                    className="bg-[#3730A3] text-white p-4 rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                  >
+                    {sending ? <Loader2 className="animate-spin" /> : <Send size={20} />}
+                  </button>
                 </div>
-              ) : (
-                <form onSubmit={handleSendMessage} className="p-8 bg-white dark:bg-[#1E293B] border-t border-gray-100 dark:border-slate-800">
-                  <div className="flex gap-4 items-center bg-gray-50 dark:bg-slate-900 p-2 rounded-[2.5rem] border-2 border-transparent focus-within:border-indigo-500 transition-all">
-                    <input
-                      type="text"
-                      value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
-                      placeholder="Type your message..."
-                      className="flex-1 bg-transparent p-4 outline-none dark:text-white font-medium"
-                    />
-                    <button
-                      disabled={sending}
-                      className="bg-[#3730A3] text-white p-4 rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
-                    >
-                      {sending ? <Loader2 className="animate-spin" /> : <Send size={20} />}
-                    </button>
-                  </div>
-                </form>
-              )}
+              </form>
             </>
           ) : (
             <div className="text-center">
@@ -325,12 +330,10 @@ export default function InboxPage() {
                 <MessageSquare size={48} />
               </div>
               <h2 className="text-2xl font-black dark:text-white">Select a contact</h2>
-              <p className="text-gray-500 dark:text-gray-400 mt-2">Pick a thread to continue your career growth.</p>
             </div>
           )}
         </main>
 
-        {/* NEW: Task Manager Sidebar */}
         <AnimatePresence>
           {showTasks && activeThread && (
             <motion.aside 
@@ -367,12 +370,12 @@ export default function InboxPage() {
                             />
                             <textarea 
                                 className="w-full bg-white dark:bg-slate-800 p-3 rounded-2xl text-xs outline-none border border-transparent focus:border-indigo-500 transition-all h-24" 
-                                placeholder="What needs to be done?"
+                                placeholder="Details..."
                                 value={taskData.description}
                                 onChange={(e) => setTaskData({...taskData, description: e.target.value})}
                                 required
                             />
-                            <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg">Assign Task</button>
+                            <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-black text-xs uppercase shadow-lg">Assign Task</button>
                         </motion.form>
                     )}
                 </div>
@@ -381,13 +384,13 @@ export default function InboxPage() {
                     {tasks.length === 0 ? (
                         <div className="text-center py-12">
                             <Clock className="mx-auto text-gray-200 mb-4" size={40} />
-                            <p className="text-gray-400 font-bold text-sm">No tasks assigned yet.</p>
+                            <p className="text-gray-400 font-bold text-sm">No tasks assigned.</p>
                         </div>
                     ) : (
                         tasks.map((task) => (
                             <div key={task.id} className="p-5 bg-white dark:bg-[#0F172A] rounded-[2rem] border-2 border-gray-50 dark:border-slate-800 shadow-sm relative overflow-hidden">
                                 <div className="flex justify-between items-center mb-3">
-                                    <span className={`text-[9px] font-black px-2 py-1 rounded-full uppercase tracking-tighter ${
+                                    <span className={`text-[9px] font-black px-2 py-1 rounded-full uppercase ${
                                         task.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'
                                     }`}>
                                         {task.status}
@@ -397,23 +400,23 @@ export default function InboxPage() {
                                     </div>
                                 </div>
                                 <h3 className="font-black text-gray-800 dark:text-white text-sm leading-tight">{task.title}</h3>
-                                <p className="text-xs text-gray-500 mt-2 leading-relaxed">{task.description}</p>
+                                <p className="text-xs text-gray-500 mt-2">{task.description}</p>
                                 
                                 {user?.role === 'STUDENT' && task.status === 'PENDING' && (
                                     <button 
                                         onClick={() => handleUpdateTask(task.id, 'COMPLETED')}
-                                        className="w-full mt-4 bg-gray-900 dark:bg-indigo-600 text-white py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest"
+                                        className="w-full mt-4 bg-indigo-600 text-white py-3 rounded-2xl text-[10px] font-black uppercase"
                                     >
-                                        Mark as Finished
+                                        Mark Done
                                     </button>
                                 )}
 
                                 {user?.role === 'MENTOR' && task.status === 'COMPLETED' && (
                                     <button 
                                         onClick={() => handleUpdateTask(task.id, 'APPROVED')}
-                                        className="w-full mt-4 bg-emerald-500 text-white py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg"
+                                        className="w-full mt-4 bg-emerald-500 text-white py-3 rounded-2xl text-[10px] font-black uppercase"
                                     >
-                                        Approve Submission
+                                        Approve XP
                                     </button>
                                 )}
                             </div>

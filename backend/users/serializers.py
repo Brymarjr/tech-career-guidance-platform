@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser, Thread, Message, MentorTask
+from .models import CustomUser, Thread, Message, MentorTask, Notification # Added Notification
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -9,15 +9,13 @@ class UserSerializer(serializers.ModelSerializer):
         extra_kwargs = {'password': {'write_only': True}}
 
     def create(self, validated_data):
-        # Extract password to ensure it's hashed via create_user
         password = validated_data.pop('password', None)
         user = CustomUser.objects.create_user(**validated_data)
         if password:
             user.set_password(password)
             user.save()
         return user
-    
-    
+
 class MentorPublicSerializer(serializers.ModelSerializer):
     rating = serializers.ReadOnlyField(source='average_rating')
 
@@ -28,8 +26,7 @@ class MentorPublicSerializer(serializers.ModelSerializer):
             'bio', 'expertise', 'job_title', 'company', 
             'years_of_experience', 'rating'
         ]
-        
-        
+
 class MessageSerializer(serializers.ModelSerializer):
     sender_username = serializers.ReadOnlyField(source='sender.username')
 
@@ -38,14 +35,13 @@ class MessageSerializer(serializers.ModelSerializer):
         fields = ['id', 'thread', 'sender', 'sender_username', 'content', 'is_read', 'created_at']
         read_only_fields = ['sender', 'thread', 'is_read']
 
-
 class ThreadSerializer(serializers.ModelSerializer):
     other_user = serializers.SerializerMethodField()
     last_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
     is_active = serializers.SerializerMethodField() 
-    student_name = serializers.ReadOnlyField(source='student.username') # For UI context
-    mentor_name = serializers.ReadOnlyField(source='mentor.username')   # For UI context
+    student_name = serializers.ReadOnlyField(source='student.username')
+    mentor_name = serializers.ReadOnlyField(source='mentor.username')
 
     class Meta:
         model = Thread
@@ -55,10 +51,6 @@ class ThreadSerializer(serializers.ModelSerializer):
         ]
         
     def get_is_active(self, obj):
-        """
-        Logic: A thread is active ONLY if the student's mentor field 
-        is still set to the mentor in this thread.
-        """
         return obj.student.mentor_id == obj.mentor_id
 
     def get_unread_count(self, obj):
@@ -99,8 +91,7 @@ class ThreadSerializer(serializers.ModelSerializer):
                 "sender_id": str(last_msg.sender.id)
             }
         return None
-    
-    
+
 class MentorTaskSerializer(serializers.ModelSerializer):
     student_username = serializers.ReadOnlyField(source='student.username')
     mentor_username = serializers.ReadOnlyField(source='mentor.username')
@@ -113,3 +104,10 @@ class MentorTaskSerializer(serializers.ModelSerializer):
             'mentor_feedback', 'created_at'
         ]
         read_only_fields = ['mentor', 'status', 'created_at']
+
+# NEW: Notification Serializer
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ['id', 'recipient', 'message', 'is_read', 'created_at']
+        read_only_fields = ['id', 'created_at']
