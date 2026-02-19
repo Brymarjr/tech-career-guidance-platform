@@ -4,5 +4,6 @@
   "tailwindCSS.includeLanguages": {
     "plaintext": "ts",
     "typescript": "javascript"
-  }
+  },
+  "python-envs.pythonProjects": []
 }

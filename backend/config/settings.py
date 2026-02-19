@@ -33,6 +33,9 @@ environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 
 OPENAI_API_KEY = env('OPENAI_API_KEY')
 
+OPENAI_BASE_URL = env('OPENAI_BASE_URL', default='https://api.groq.com/openai/v1')
+
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
