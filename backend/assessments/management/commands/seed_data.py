@@ -78,7 +78,8 @@ class Command(BaseCommand):
                 if not dry_run:
                     Question.objects.all().delete()
                     for text, trait in questions_data:
-                        Question.objects.create(text=text, trait_code=trait)
+                        # Use 'riasec_type' to match your models.py
+                        Question.objects.create(text=text, riasec_type=trait)
 
                 # 3. MILESTONE ORDERS (Exact sequencing 1 -> 5)
                 milestone_orders = {

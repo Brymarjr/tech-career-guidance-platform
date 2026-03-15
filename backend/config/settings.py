@@ -75,6 +75,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -108,7 +109,7 @@ CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            "hosts": [('127.0.0.1', 6379)],
+            "hosts": [env('REDIS_URL', default='redis://127.0.0.1:6379')],
         },
     },
 }
@@ -158,6 +159,12 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# ADD THIS LINE: This tells Django where to put files during 'collectstatic'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# Optional but recommended for Whitenoise (if you use it to serve static files)
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
 
 # REST_FRAMEWORK settings
 REST_FRAMEWORK = {
@@ -178,9 +185,12 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
+# ALLOWED_HOSTS = ['your-app-name.onrender.com', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['*'] # Use wildcard temporarily to ensure it builds
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
-    "http://127.0.0.1:3000",
+    "https://your-frontend-name.vercel.app", # Add your Vercel URL here
 ]
 
 # --- Production-Grade SSL Configuration (Port 465) ---
