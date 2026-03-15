@@ -1,14 +1,28 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import api from "@/lib/api";
-import { Bell, CheckCheck, X, Target, MessageSquare } from "lucide-react";
+import { Bell, CheckCheck, MessageSquare } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePresence } from "@/context/PresenceContext";
 
 export default function NotificationBell() {
   const [notes, setNotes] = useState<any[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null); // Ref for outside click detection
   const { unreadNotifications } = usePresence();
+
+  // GLOBAL CLICK-TO-CLOSE LOGIC
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isOpen]);
 
   const fetchNotes = async () => {
     try {
@@ -50,7 +64,7 @@ export default function NotificationBell() {
   const unreadCount = notes.filter(n => !n.is_read).length;
 
   return (
-    <div className="relative">
+    <div className="relative" ref={dropdownRef}> {/* Ref attached here */}
       <button 
         onClick={() => setIsOpen(!isOpen)} 
         className="p-4 bg-white dark:bg-[#1E293B] rounded-2xl shadow-lg relative transition-all hover:scale-110 group"

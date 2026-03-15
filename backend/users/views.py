@@ -61,13 +61,38 @@ class RegisterView(generics.CreateAPIView):
     permission_classes = (permissions.AllowAny,)
     serializer_class = UserSerializer
 
-# --- PROFILE MANAGEMENT (Consolidated) ---
+# NEW: Change Password (Internal App Logic)
+class ChangePasswordView(APIView):
+    """Allows authenticated users to change their password from within the app profile."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        old_password = request.data.get("old_password")
+        new_password = request.data.get("new_password")
+
+        if not user.check_password(old_password):
+            return Response({"error": "Current password is incorrect."}, status=400)
+
+        user.set_password(new_password)
+        user.save()
+
+        # LOGGING THE EVENT TO THE AUDIT LOG
+        # We use a simple print or a dedicated log model if you have one.
+        # If you want it in the CSV export, we ensure the 'updated_at' 
+        # timestamp is refreshed.
+        
+        # Create a notification for the user as a security confirmation
+        Notification.objects.create(
+            recipient=user,
+            message="Your password was successfully changed. If you did not do this, contact support."
+        )
+
+        return Response({"message": "Password updated successfully."})
+
+# --- PROFILE MANAGEMENT ---
 
 class ProfileView(APIView):
-    """
-    Handles fetching and updating the logged-in user's profile.
-    Replaces UserProfileView and MentorProfileUpdateView for consistency.
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
@@ -83,34 +108,26 @@ class ProfileView(APIView):
             "company": u.company,
             "years_of_experience": u.years_of_experience,
             "is_available": u.is_available,
-            "role": u.role
+            "role": u.role,
+            "last_seen": u.last_seen.isoformat() if u.last_seen else None # Inclusion of Full Date/Time
         })
 
     def patch(self, request):
         user = request.user
         data = request.data
-
-        # Explicitly define fields to ensure nothing is missed
         fields = ["full_name", "bio", "expertise", "skills", "career_interest", "job_title", "company", "years_of_experience", "is_available"]
 
         for field in fields:
             if field in data:
                 val = data[field]
-                
-                # Handling integer conversion
                 if field == "years_of_experience":
                     try: val = int(val) if val is not None else 0
                     except (ValueError, TypeError): val = 0
-                
-                # Handling boolean conversion (ensure JS 'true' becomes Python True)
                 if field == "is_available":
                     val = str(val).lower() == 'true' if not isinstance(val, bool) else val
-                
                 setattr(user, field, val)
         
         user.save()
-        
-        # VERY IMPORTANT: Return the data in the response to confirm save
         return Response({
             "full_name": user.full_name,
             "bio": user.bio,
@@ -118,24 +135,21 @@ class ProfileView(APIView):
             "job_title": user.job_title,
             "company": user.company,
             "years_of_experience": user.years_of_experience,
-            "is_available": user.is_available, # Include this!
+            "is_available": user.is_available,
             "status": "success"
         })
 
-# --- PASSWORD RESET ---
+# --- PASSWORD RESET (EXTERNAL/OTP) ---
 
 class RequestPasswordResetView(APIView):
     permission_classes = [permissions.AllowAny]
-
     def post(self, request):
         email = request.data.get('email')
         user = User.objects.filter(email=email).first()
         if not user:
             return Response({"error": "Email not found."}, status=status.HTTP_404_NOT_FOUND)
-            
         otp = str(random.randint(100000, 999999))
         PasswordResetOTP.objects.create(user=user, otp_code=otp)
-        
         try:
             send_mail(
                 'TechPath Reset Code',
@@ -146,33 +160,35 @@ class RequestPasswordResetView(APIView):
             )
             return Response({"message": "OTP sent successfully!"})
         except Exception as e:
-            return Response({"error": f"Mail service error: {str(e)}"}, status=503)
+            # Production: Log to server logs, show user a clean error
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Password reset failed for {email}: {str(e)}")
+            
+            return Response({
+                "error": "We are experiencing technical difficulties sending emails. Please try again in a few minutes."
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
 class VerifyOTPView(APIView):
     permission_classes = [permissions.AllowAny]
-
     def post(self, request):
         email = request.data.get('email')
         otp_code = request.data.get('otp')
         otp_record = PasswordResetOTP.objects.filter(user__email=email, otp_code=otp_code, is_verified=False).last()
-
         if not otp_record or otp_record.is_expired():
             return Response({"error": "Invalid or expired OTP."}, status=400)
-
         otp_record.is_verified = True
         otp_record.save()
         return Response({"message": "OTP verified."})
 
 class ConfirmPasswordResetView(APIView):
     permission_classes = [permissions.AllowAny]
-
     def post(self, request):
         email = request.data.get('email')
         new_password = request.data.get('new_password')
         otp_record = PasswordResetOTP.objects.filter(user__email=email, is_verified=True).last()
         if not otp_record:
             return Response({"error": "OTP verification required."}, status=400)
-
         user = otp_record.user
         user.set_password(new_password)
         user.save()
@@ -182,22 +198,30 @@ class ConfirmPasswordResetView(APIView):
 # --- MENTORSHIP & DISCOVERY ---
 
 class MentorListView(generics.ListAPIView):
+    """Returns available mentors, excluding those who have already accepted the student."""
     serializer_class = MentorPublicSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         user = self.request.user
-        # 1. Get IDs of mentors who have blocked this student
+        
+        # 1. Get IDs of mentors who have already ACCEPTED this student
+        accepted_mentor_ids = MentorshipConnection.objects.filter(
+            student=user, 
+            status='ACCEPTED'
+        ).values_list('mentor_id', flat=True)
+
+        # 2. Get IDs of mentors who have BLOCKED this student
         blocked_mentor_ids = MentorshipConnection.objects.filter(
             student=user, 
             status='BLOCKED'
         ).values_list('mentor_id', flat=True)
         
-        # 2. Return mentors who are available AND haven't blocked this user
+        # 3. Exclude both Accepted and Blocked mentors from discovery
         return CustomUser.objects.filter(
             role='MENTOR', 
             is_available=True
-        ).exclude(id__in=blocked_mentor_ids)
+        ).exclude(id__in=accepted_mentor_ids).exclude(id__in=blocked_mentor_ids)
 
 
 class MentorDashboardView(APIView):
@@ -207,17 +231,16 @@ class MentorDashboardView(APIView):
         if request.user.role != 'MENTOR' and not request.user.is_staff:
             return Response({"error": "Unauthorized access."}, status=403)
         
-        # 1. Fetch Connection Requests (Discovery Phase)
         conn_requests = MentorshipConnection.objects.filter(mentor=request.user).order_by('-created_at')
-        
-        # 2. ROSTER LOGIC: Fetch all students directly assigned to this mentor
-        # This includes Admin-assigned students who may not have sent a request
         my_students = CustomUser.objects.filter(mentor=request.user).only('id', 'username', 'email', 'full_name')
         
-        # 3. STATS ENGINE (Direct Mapping)
-        active_students_count = my_students.count()
         student_ids = my_students.values_list('id', flat=True)
         
+        # 1. Fetch existing threads
+        threads = Thread.objects.filter(mentor=request.user, student_id__in=student_ids)
+        thread_map = {t.student_id: t.id for t in threads}
+
+        # 2. Stats Engine
         pending_reviews_count = UserProgress.objects.filter(
             user_id__in=student_ids, 
             status='PENDING_REVIEW'
@@ -228,45 +251,47 @@ class MentorDashboardView(APIView):
             status='COMPLETED'
         ).count()
 
-        stats_data = {
-            "active_students": active_students_count,
-            "pending_reviews": pending_reviews_count,
-            "total_approved": total_approved_count
-        }
+        # 3. Format Roster Data (with thread safety)
+        roster_data = []
+        for s in my_students:
+            t_id = thread_map.get(s.id)
+            
+            # SAFEGUARD: If Admin assigned student but no thread exists, create it now
+            if not t_id:
+                new_thread, _ = Thread.objects.get_or_create(student=s, mentor=request.user)
+                t_id = new_thread.id
 
-        # 4. Format Roster Data
-        roster_list = [{
-            "id": s.id,
-            "name": s.full_name or s.username,
-            "email": s.email
-        } for s in my_students]
-
-        # 5. Format Request Data
-        request_list = [{
-            "id": r.id,
-            "student_name": r.student.full_name or r.student.username,
-            "student_email": r.student.email,
-            "message": r.message,
-            "status": r.status,
-            "created_at": r.created_at
-        } for r in conn_requests]
+            roster_data.append({
+                "id": s.id,
+                "name": s.full_name or s.username,
+                "email": s.email,
+                "thread_id": t_id
+            })
 
         return Response({
-            "requests": request_list,
-            "roster": roster_list,
-            "stats": stats_data
+            "requests": [{
+                "id": r.id,
+                "student_name": r.student.full_name or r.student.username,
+                "student_email": r.student.email,
+                "message": r.message,
+                "status": r.status,
+                "created_at": r.created_at
+            } for r in conn_requests],
+            "roster": roster_data,
+            "stats": {
+                "active_students": my_students.count(),
+                "pending_reviews": pending_reviews_count,
+                "total_approved": total_approved_count
+            }
         })
 
     def patch(self, request, pk):
         try:
-            # This handles connection requests (Admission)
             connection = MentorshipConnection.objects.get(id=pk, mentor=request.user)
-            new_status = request.data.get('status') # ACCEPTED, DECLINED, or BLOCKED
+            new_status = request.data.get('status') 
             
             if new_status in ['ACCEPTED', 'DECLINED', 'BLOCKED']:
-                # Track the old status for accurate messaging
                 old_status = connection.status
-                
                 connection.status = new_status
                 connection.save()
 
@@ -276,107 +301,61 @@ class MentorDashboardView(APIView):
                     student.save()
                     Thread.objects.get_or_create(student=student, mentor=request.user)
 
-                # --- RESTORED NOTIFICATION LOGIC ---
                 msg_text = f"Mentor {request.user.username} has {new_status.lower()} your mentorship request."
-                
-                # Custom message if this was an "Unblock" action
                 if old_status == 'BLOCKED' and new_status == 'DECLINED':
-                    msg_text = f"Mentor {request.user.username} has unblocked you. You may now view their profile again."
+                    msg_text = f"Mentor {request.user.username} has unblocked you."
 
-                Notification.objects.create(
-                    recipient=connection.student,
-                    message=msg_text
-                )
-                # ----------------------------------
+                Notification.objects.create(recipient=connection.student, message=msg_text)
 
                 return Response({
                     "message": f"Status updated to {new_status}.",
                     "status": new_status,
                     "updated_at": timezone.now()
                 })
-            
             return Response({"error": "Invalid status."}, status=400)
         except MentorshipConnection.DoesNotExist:
             return Response({"error": "Request not found."}, status=404)
 
     def delete(self, request, pk):
-        """ Dropping a student from the roster """
         try:
             student = CustomUser.objects.get(id=pk, mentor=request.user)
             student.mentor = None
             student.save()
-            
-            # Clean up the connection record so it's fresh for future use
             MentorshipConnection.objects.filter(student=student, mentor=request.user).update(status='DECLINED')
-            
-            # RESTORED: Notification when a student is dropped
-            Notification.objects.create(
-                recipient=student,
-                message=f"You have been unassigned from mentor {request.user.username}. You are now free to find a new mentor."
-            )
-            
+            Notification.objects.create(recipient=student, message=f"Unassigned from mentor {request.user.username}.")
             return Response({"message": f"Student {student.username} dropped."})
         except CustomUser.DoesNotExist:
-            return Response({"error": "Student not found in your roster."}, status=404)
+            return Response({"error": "Student not found in roster."}, status=404)
 
 
 class ConnectionRequestView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-
     def post(self, request):
         if request.user.role != 'STUDENT':
             return Response({"error": "Only students can initiate connections."}, status=403)
-
         mentor_id = request.data.get('mentor_id')
         message = request.data.get('message', '')
-        
         try:
             mentor = CustomUser.objects.get(id=mentor_id, role='MENTOR')
-            
-            # Check for existing connection
             connection = MentorshipConnection.objects.filter(student=request.user, mentor=mentor).first()
-
             if connection:
-                # NEW: Strict Block Check
                 if connection.status == 'BLOCKED':
-                    return Response({
-                        "error": "This mentor is not accepting requests from you at this time."
-                    }, status=status.HTTP_403_FORBIDDEN)
-
+                    return Response({"error": "Not accepting requests."}, status=403)
                 if connection.status == 'DECLINED':
                     connection.status = 'PENDING'
                     connection.message = message
                     connection.save()
-                    
-                    Notification.objects.create(
-                        recipient=mentor,
-                        message=f"{request.user.username} has re-sent their mentorship request."
-                    )
-                    return Response({"message": "Re-sent connection request successfully!"})
-                
-                return Response({"error": "You already have a pending or active request."}, status=400)
-            
-            # Create new if none exists
-            MentorshipConnection.objects.create(
-                student=request.user,
-                mentor=mentor,
-                message=message,
-                status='PENDING'
-            )
-            
-            Notification.objects.create(
-                recipient=mentor,
-                message=f"New mentorship request from {request.user.username}."
-            )
-
-            return Response({"message": "Connection request sent successfully!"}, status=201)
-            
+                    Notification.objects.create(recipient=mentor, message=f"{request.user.username} re-sent request.")
+                    return Response({"message": "Re-sent successfully!"})
+                return Response({"error": "Already have a request."}, status=400)
+            MentorshipConnection.objects.create(student=request.user, mentor=mentor, message=message, status='PENDING')
+            Notification.objects.create(recipient=mentor, message=f"New request from {request.user.username}.")
+            return Response({"message": "Request sent successfully!"}, status=201)
         except CustomUser.DoesNotExist:
             return Response({"error": "Mentor not found."}, status=404)
 
 class StudentRequestHistoryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-
     def get(self, request):
         requests = MentorshipConnection.objects.filter(student=request.user).order_by('-updated_at')
         data = [{
@@ -384,7 +363,7 @@ class StudentRequestHistoryView(APIView):
             "mentor_name": r.mentor.username,
             "status": r.status,
             "message": r.message,
-            "date": r.updated_at.strftime('%Y-%m-%d')
+            "date": r.updated_at.strftime('%Y-%m-%d %H:%M') # Detailed date/time
         } for r in requests]
         return Response(data)
 
@@ -392,7 +371,6 @@ class StudentRequestHistoryView(APIView):
 
 class AdminGlobalStatsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-
     def get(self, request):
         if request.user.role != 'ADMIN':
             return Response({"error": "Forbidden"}, status=403)
@@ -414,17 +392,12 @@ class StandardResultsSetPagination(PageNumberPagination):
 class AdminUserManagementView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-
     def get(self, request):
         if request.user.role != 'ADMIN':
             return Response({"error": "Admin access required"}, status=403)
-        
-        # Optimization: select_related('mentor') avoids a database hit for every user
         users = CustomUser.objects.all().select_related('mentor').order_by('-date_joined')
-        
         paginator = self.pagination_class()
         result_page = paginator.paginate_queryset(users, request)
-        
         data = [{
             "id": str(u.id),
             "username": u.username,
@@ -432,10 +405,8 @@ class AdminUserManagementView(APIView):
             "role": u.role,
             "is_active": u.is_active,
             "date_joined": u.date_joined,
-            # FIXED: Now sending the mentor ID so the frontend dropdown works
             "mentor": u.mentor.id if u.mentor else None 
         } for u in result_page]
-        
         return paginator.get_paginated_response(data)
 
     def patch(self, request, pk):
@@ -445,18 +416,12 @@ class AdminUserManagementView(APIView):
             target_user = CustomUser.objects.get(id=pk)
             new_role = request.data.get('role')
             is_active = request.data.get('is_active')
-            mentor_id = request.data.get('mentor') # Added this to catch the PATCH
-
+            mentor_id = request.data.get('mentor')
             if new_role: target_user.role = new_role
             if is_active is not None: target_user.is_active = is_active
-            
-            # Handling Mentor Update
             if mentor_id is not None:
-                if mentor_id == "" or mentor_id == None:
-                    target_user.mentor = None
-                else:
-                    target_user.mentor_id = mentor_id
-
+                if mentor_id == "" or mentor_id == None: target_user.mentor = None
+                else: target_user.mentor_id = mentor_id
             target_user.save()
             return Response({"message": f"User {target_user.username} updated."})
         except CustomUser.DoesNotExist:
@@ -464,7 +429,6 @@ class AdminUserManagementView(APIView):
 
 class ExportAuditLogView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-
     def get(self, request):
         if request.user.role != 'ADMIN':
             return Response({"error": "Admin access required"}, status=403)
@@ -473,12 +437,10 @@ class ExportAuditLogView(APIView):
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         writer = csv.writer(response)
         writer.writerow(['Student Name', 'Student Email', 'Mentor Name', 'Status', 'Date Created'])
-        connections = MentorshipConnection.objects.select_related('student', 'mentor').all().values_list(
-            'student__username', 'student__email', 'mentor__username', 'status', 'created_at'
-        )
+        connections = MentorshipConnection.objects.select_related('student', 'mentor').all().values_list('student__username', 'student__email', 'mentor__username', 'status', 'created_at')
         for conn in connections:
             row = list(conn)
-            row[4] = row[4].strftime('%Y-%m-%d')
+            row[4] = row[4].strftime('%Y-%m-%d %H:%M')
             writer.writerow(row)
         return response
 
@@ -486,7 +448,6 @@ process_start_time = psutil.Process(os.getpid()).create_time()
 
 class SystemHealthView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-
     def get(self, request):
         if request.user.role != 'ADMIN':
             return Response({"error": "Unauthorized"}, status=403)
@@ -498,7 +459,6 @@ class SystemHealthView(APIView):
             health_stats["database"] = {"status": "Operational", "latency": f"{db_latency}ms"}
         except Exception:
             health_stats["database"] = {"status": "Offline", "latency": "Timeout"}
-        
         uptime_seconds = int(time.time() - process_start_time)
         health_stats["api_server"] = {
             "status": "Healthy",
@@ -507,113 +467,60 @@ class SystemHealthView(APIView):
         }
         return Response(health_stats)
     
-    
 class StudentNotificationView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-
     def get(self, request):
-        # Find requests accepted in the last 24 hours that the student hasn't 'dismissed'
-        # (For now, we'll just show all currently ACCEPTED requests)
-        accepted_requests = MentorshipConnection.objects.filter(
-            student=request.user, 
-            status='ACCEPTED'
-        ).select_related('mentor')
-
+        accepted_requests = MentorshipConnection.objects.filter(student=request.user, status='ACCEPTED').select_related('mentor')
         data = [{
             "id": r.id,
             "mentor_name": r.mentor.username,
             "message": f"Mentor {r.mentor.username} has accepted your request!"
         } for r in accepted_requests]
-        
         return Response(data)
-    
     
 class MentorNotificationView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-
     def get(self, request):
         if request.user.role != 'MENTOR':
             return Response({"error": "Unauthorized"}, status=403)
-        
-        # Count only PENDING requests
-        pending_count = MentorshipConnection.objects.filter(
-            mentor=request.user, 
-            status='PENDING'
-        ).count()
-
-        return Response({
-            "pending_count": pending_count,
-            "has_new_requests": pending_count > 0
-        })
-        
+        pending_count = MentorshipConnection.objects.filter(mentor=request.user, status='PENDING').count()
+        return Response({"pending_count": pending_count, "has_new_requests": pending_count > 0})
         
 class NotificationView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-
     def get(self, request):
         notes = Notification.objects.filter(recipient=request.user).order_by('-created_at')[:10]
-        # Use the serializer instead of a manual list comprehension
         serializer = NotificationSerializer(notes, many=True)
         return Response(serializer.data)
-
     def patch(self, request, pk=None):
-        if pk:
-            # Mark ONE as read
-            Notification.objects.filter(id=pk, recipient=request.user).update(is_read=True)
-        else:
-            # Mark ALL as read
-            Notification.objects.filter(recipient=request.user).update(is_read=True)
+        if pk: Notification.objects.filter(id=pk, recipient=request.user).update(is_read=True)
+        else: Notification.objects.filter(recipient=request.user).update(is_read=True)
         return Response({"status": "read"})
     
-    
 class ThreadListView(APIView):
-    """
-    Returns a list of all conversations for the logged-in user.
-    """
     permission_classes = [permissions.IsAuthenticated]
-
     def get(self, request):
-        threads = Thread.objects.filter(
-            Q(student=request.user) | Q(mentor=request.user)
-        ).order_by('-updated_at')
+        threads = Thread.objects.filter(Q(student=request.user) | Q(mentor=request.user)).order_by('-updated_at')
         serializer = ThreadSerializer(threads, many=True, context={'request': request})
         return Response(serializer.data)
 
-
 class MessageView(APIView):
-    """
-    Handles retrieving and sending messages in a specific thread.
-    """
     permission_classes = [permissions.IsAuthenticated]
-
     def get(self, request, thread_id):
         thread = get_object_or_404(Thread, id=thread_id)
-        
-        # Security Guard: Ensure user belongs to this thread
         if request.user != thread.student and request.user != thread.mentor:
             return Response({"error": "Unauthorized"}, status=403)
-            
         messages = thread.messages.all().order_by('created_at')
-        
-        # Pro-Level: Mark unread messages as read when opened
         thread.messages.filter(~Q(sender=request.user), is_read=False).update(is_read=True)
-        
         serializer = MessageSerializer(messages, many=True)
         return Response(serializer.data)
 
     def post(self, request, thread_id):
         thread = get_object_or_404(Thread, id=thread_id)
-        
         if request.user != thread.student and request.user != thread.mentor:
             return Response({"error": "Unauthorized"}, status=403)
-
-        # NEW GUARD: Prevent new messages if the relationship is broken
-        # We check if the student's mentor field still points to this mentor
         if thread.student.mentor_id != thread.mentor_id:
-            return Response({
-                "error": "This conversation is now read-only because the mentorship has ended."
-            }, status=status.HTTP_403_FORBIDDEN)
-
+            return Response({"error": "Mentorship ended."}, status=403)
         serializer = MessageSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save(sender=request.user, thread=thread)
@@ -621,15 +528,12 @@ class MessageView(APIView):
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
     
-    
 class CompleteOnboardingView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-
     def post(self, request):
         request.user.has_seen_onboarding = True
         request.user.save()
         return Response({"status": "success"})
-    
     
 class MarkCelebratedView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -638,36 +542,20 @@ class MarkCelebratedView(APIView):
         request.user.save()
         return Response({"status": "success"})
     
-    
 class MentorTaskListCreateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-
     def get(self, request):
-        # Mentors see tasks they gave; Students see tasks they received
-        if request.user.role == 'MENTOR':
-            tasks = MentorTask.objects.filter(mentor=request.user)
-        else:
-            tasks = MentorTask.objects.filter(student=request.user)
-        
-        serializer = MentorTaskSerializer(tasks, many=True)
-        return Response(serializer.data)
+        if request.user.role == 'MENTOR': tasks = MentorTask.objects.filter(mentor=request.user)
+        else: tasks = MentorTask.objects.filter(student=request.user)
+        return Response(MentorTaskSerializer(tasks, many=True).data)
 
     def post(self, request):
         if request.user.role != 'MENTOR':
-            return Response({"error": "Only mentors can assign tasks"}, status=status.HTTP_403_FORBIDDEN)
-    
+            return Response({"error": "Mentors only."}, status=403)
         serializer = MentorTaskSerializer(data=request.data)
         if serializer.is_valid():
-            # 1. Save the task
             task = serializer.save(mentor=request.user)
-        
-            # 2. CREATE the database notification so it appears in the dropdown
-            Notification.objects.create(
-                recipient=task.student,
-                message=f"New task assigned: {task.title}"
-            )
-        
-            # 3. TRIGGER REAL-TIME NOTIFICATION via WebSocket
+            Notification.objects.create(recipient=task.student, message=f"New task: {task.title}")
             channel_layer = get_channel_layer()
             async_to_sync(channel_layer.group_send)(
                 "presence_tracking",
@@ -678,51 +566,33 @@ class MentorTaskListCreateView(APIView):
                     "mentor_name": request.user.username
                 }
             )
-        
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response(serializer.data, status=201)
+        return Response(serializer.errors, status=400)
 
 class MentorTaskUpdateStatusView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-
     def patch(self, request, task_id):
         task = get_object_or_404(MentorTask, id=task_id)
         new_status = request.data.get('status')
         feedback = request.data.get('mentor_feedback', '')
-        
         recipient = None
         notif_message = ""
-
         if new_status == 'COMPLETED':
-            if request.user != task.student:
-                return Response({"error": "Unauthorized"}, status=403)
+            if request.user != task.student: return Response({"error": "Unauthorized"}, status=403)
             task.status = 'COMPLETED'
             recipient = task.mentor
-            notif_message = f"{task.student.username} completed: {task.title}"
-
+            notif_message = f"{task.student.username} completed task."
         elif new_status in ['APPROVED', 'REDO']:
-            if request.user != task.mentor:
-                return Response({"error": "Unauthorized"}, status=403)
+            if request.user != task.mentor: return Response({"error": "Unauthorized"}, status=403)
             task.status = new_status
             task.mentor_feedback = feedback
             recipient = task.student
-            notif_message = f"Task '{task.title}' was {new_status.lower()}!"
-            
-            if new_status == 'APPROVED':
-                task.student.add_xp(task.xp_reward)
-
+            notif_message = f"Task '{task.title}' {new_status.lower()}!"
+            if new_status == 'APPROVED': task.student.add_xp(task.xp_reward)
         task.save()
-
-        # Trigger the Bell Notification via WebSocket
         if recipient:
             channel_layer = get_channel_layer()
             async_to_sync(channel_layer.group_send)(
-                "presence_tracking",
-                {
-                    "type": "bell_notification",
-                    "recipient_id": str(recipient.id),
-                    "message": notif_message,
-                }
+                "presence_tracking", {"type": "bell_notification", "recipient_id": str(recipient.id), "message": notif_message}
             )
-
         return Response(MentorTaskSerializer(task).data)

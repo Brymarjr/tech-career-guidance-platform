@@ -6,8 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer, PolarRadiusAxis } from "recharts";
 import { 
   LayoutDashboard, Award, BookOpen, User, LogOut, Target, Sparkles, TrendingUp, X, 
-  MessageSquare, Trophy, Zap, FolderGit2, PartyPopper, UserCheck, Send, Moon, Sun, ChevronRight,
-  ShieldCheck
+  MessageSquare, Trophy, Zap, FolderGit2, UserCheck, Send, Moon, Sun, ChevronRight
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -29,107 +28,77 @@ export default function Dashboard() {
   const [isTyping, setIsTyping] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [showOnboarding, setShowOnboarding] = useState(false); 
-  
-  // Celebration State
   const [showCelebration, setShowCelebration] = useState(false);
 
+  const userMenuRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // --- GLOBAL CLICK-AWAY LOGIC ---
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      // Only close if the click is truly OUTSIDE the menu container
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    if (isUserMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isUserMenuOpen]);
 
   // High-Energy Confetti Function
   const fireConfetti = () => {
     const end = Date.now() + 3 * 1000;
     const colors = ["#4F46E5", "#10B981", "#F59E0B"];
-
     (function frame() {
-      confetti({
-        particleCount: 3,
-        angle: 60,
-        spread: 55,
-        origin: { x: 0, y: 0.6 },
-        colors: colors,
-      });
-      confetti({
-        particleCount: 3,
-        angle: 120,
-        spread: 55,
-        origin: { x: 1, y: 0.6 },
-        colors: colors,
-      });
-
-      if (Date.now() < end) {
-        requestAnimationFrame(frame);
-      }
+      confetti({ particleCount: 3, angle: 60, spread: 55, origin: { x: 0, y: 0.6 }, colors: colors });
+      confetti({ particleCount: 3, angle: 120, spread: 55, origin: { x: 1, y: 0.6 }, colors: colors });
+      if (Date.now() < end) requestAnimationFrame(frame);
     })();
   };
 
   const formatTrait = (code: string) => {
     if (!code) return "Analyzing...";
-    const traitNames: any = {
-      'R': 'Realistic', 'I': 'Investigative', 'A': 'Artistic',
-      'S': 'Social', 'E': 'Enterprising', 'C': 'Conventional'
-    };
+    const traitNames: any = { 'R': 'Realistic', 'I': 'Investigative', 'A': 'Artistic', 'S': 'Social', 'E': 'Enterprising', 'C': 'Conventional' };
     return code.split('').map(letter => traitNames[letter] || letter).join('-');
   };
 
   const fetchDashboard = async () => {
     const token = typeof window !== "undefined" ? localStorage.getItem('access_token') : null;
     if (!token) return;
-
     try {
       const res = await api.get("assessments/dashboard-summary/");
-      console.log("Dashboard Sync:", res.data.user);
-
-      // --- MENTOR CELEBRATION LOGIC ---
       if (res.data.user?.mentor && res.data.user?.has_celebrated_mentor === false) {
         const localKey = `celebrated_${res.data.user.username}`;
-        const alreadySeenLocally = localStorage.getItem(localKey);
-
-        if (!alreadySeenLocally) {
-           console.log("Triggering Celebration!");
-           setShowCelebration(true);
-           fireConfetti();
-           localStorage.setItem(localKey, "true");
-           await api.post("users/mark-celebrated/"); 
+        if (!localStorage.getItem(localKey)) {
+          setShowCelebration(true);
+          fireConfetti();
+          localStorage.setItem(localKey, "true");
+          await api.post("users/mark-celebrated/"); 
         }
       }
-
       setData(res.data);
-      
-      if (res.data.user && !res.data.user.has_seen_onboarding) {
-        setShowOnboarding(true);
-      } else if (!res.data.assessment?.top_trait) {
-        router.push("/assessment");
-      }
+      if (res.data.user && !res.data.user.has_seen_onboarding) setShowOnboarding(true);
+      else if (!res.data.assessment?.top_trait) router.push("/assessment");
       
       if (res.data.assessment?.scores) {
-        const mapping: any = {
-          'R': 'Realistic', 'I': 'Investigative', 'A': 'Artistic',
-          'S': 'Social', 'E': 'Enterprising', 'C': 'Conventional'
-        };
-        const formatted = Object.keys(res.data.assessment.scores).map(key => ({
+        const mapping: any = { 'R': 'Realistic', 'I': 'Investigative', 'A': 'Artistic', 'S': 'Social', 'E': 'Enterprising', 'C': 'Conventional' };
+        setChartData(Object.keys(res.data.assessment.scores).map(key => ({
           subject: mapping[key] || key,
           value: res.data.assessment.scores[key],
           fullMark: 10,
-        }));
-        setChartData(formatted);
+        })));
       }
-      
       const threadsRes = await api.get("users/threads/");
-      const totalUnread = threadsRes.data.reduce((acc: number, t: any) => acc + (t.unread_count || 0), 0);
-      setUnreadMessages(totalUnread);
-
+      setUnreadMessages(threadsRes.data.reduce((acc: number, t: any) => acc + (t.unread_count || 0), 0));
     } catch (err: any) {
-      if (err.response?.status !== 401 && localStorage.getItem('access_token')) {
-        toast.error("Failed to load dashboard data");
-      }
+      if (err.response?.status !== 401 && localStorage.getItem('access_token')) toast.error("Failed to load dashboard data");
     }
   };
 
   useEffect(() => {
-    if (user && user.role === 'MENTOR') {
-      router.push("/mentor/dashboard");
-      return;
-    }
+    if (user && user.role === 'MENTOR') { router.push("/mentor/dashboard"); return; }
     if (user && user.loggedIn) {
       fetchDashboard();
       const interval = setInterval(fetchDashboard, 30000);
@@ -155,9 +124,7 @@ export default function Dashboard() {
     }
   }, [data?.new_achievements]);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isTyping]);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, isTyping]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -178,7 +145,8 @@ export default function Dashboard() {
 
   const handleOnboardingComplete = () => {
     setShowOnboarding(false);
-    router.push("/assessment");
+    // Refresh data so the onboarding status is updated locally
+    fetchDashboard();
   };
 
   if (!data) return (
@@ -225,7 +193,7 @@ export default function Dashboard() {
           </motion.div>
           <div className="flex items-center gap-6">
             <NotificationBell />
-            <div className="relative">
+            <div className="relative" ref={userMenuRef}>
               <div onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className="flex items-center gap-5 bg-white dark:bg-[#1E293B] p-4 pr-10 rounded-[2rem] shadow-xl border border-gray-50 dark:border-slate-800 hover:shadow-2xl transition-all cursor-pointer group z-50">
                 <div className="w-14 h-14 bg-gradient-to-tr from-[#3730A3] to-[#10B981] rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg group-hover:rotate-6 transition-transform">{data.user.username[0].toUpperCase()}</div>
                 <div><p className="font-black text-[#1F2937] dark:text-white text-lg">{data.user.username}</p><span className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-[#3730A3] dark:text-indigo-400 rounded-full text-[10px] font-black uppercase tracking-wider">{data.user.role || 'Member'}</span></div>
@@ -235,8 +203,17 @@ export default function Dashboard() {
                   <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute right-0 mt-4 w-72 bg-white dark:bg-[#1E293B] rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-gray-50 dark:border-slate-800 p-4 z-[100] overflow-hidden">
                     <div className="space-y-2">
                       <button onClick={() => { router.push("/dashboard/settings"); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-4 p-4 text-gray-500 dark:text-gray-400 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all"><User size={20} /> My Profile</button>
-                      <button onClick={toggleTheme} className="w-full flex items-center justify-between p-4 text-gray-500 dark:text-gray-400 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all"><div className="flex items-center gap-4">{isDarkMode ? <Sun size={20} className="text-yellow-400" /> : <Moon size={20} />} {isDarkMode ? "Light Mode" : "Dark Mode"}</div><div className={`w-10 h-6 rounded-full p-1 transition-colors ${isDarkMode ? 'bg-[#10B981]' : 'bg-gray-200'}`}><div className={`w-4 h-4 bg-white rounded-full transition-transform ${isDarkMode ? 'translate-x-4' : 'translate-x-0'}`} /></div></button>
-                      <hr className="border-gray-50 dark:border-slate-800 my-2" /><button onClick={() => { logout(); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-4 p-4 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-2xl font-bold transition-all"><LogOut size={20} /> Sign Out</button>
+                      
+                      {/* FIX: added stopPropagation to keep menu open while toggling */}
+                      <button onClick={(e) => { e.stopPropagation(); toggleTheme(); }} className="w-full flex items-center justify-between p-4 text-gray-500 dark:text-gray-400 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all">
+                        <div className="flex items-center gap-4">{isDarkMode ? <Sun size={20} className="text-yellow-400" /> : <Moon size={20} />} {isDarkMode ? "Light Mode" : "Dark Mode"}</div>
+                        <div className={`w-10 h-6 rounded-full p-1 transition-colors ${isDarkMode ? 'bg-[#10B981]' : 'bg-gray-200'}`}>
+                          <motion.div animate={{ x: isDarkMode ? 16 : 0 }} className="w-4 h-4 bg-white rounded-full transition-transform shadow-sm" />
+                        </div>
+                      </button>
+
+                      <hr className="border-gray-50 dark:border-slate-800 my-2" />
+                      <button onClick={() => { logout(); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-4 p-4 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-2xl font-bold transition-all"><LogOut size={20} /> Sign Out</button>
                     </div>
                   </motion.div>
                 )}
@@ -315,20 +292,20 @@ export default function Dashboard() {
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowCelebration(false)} className="absolute inset-0 bg-[#0F172A]/80 backdrop-blur-xl" />
             <motion.div initial={{ scale: 0.8, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.8, opacity: 0, y: 20 }} className="relative bg-white dark:bg-[#1E293B] w-full max-w-lg p-12 rounded-[4rem] shadow-2xl border border-white/10 text-center overflow-hidden">
-               <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.2, 0.1] }} transition={{ repeat: Infinity, duration: 4 }} className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-indigo-500/20 to-emerald-500/20" />
-               <div className="relative z-10">
-                 <div className="w-24 h-24 bg-gradient-to-tr from-[#10B981] to-[#34D399] rounded-[2rem] flex items-center justify-center text-white mx-auto mb-8 shadow-2xl shadow-emerald-500/30"><UserCheck size={48} /></div>
-                 <h2 className="text-4xl font-black dark:text-white mb-4 tracking-tighter">Mentor Assigned! 🚀</h2>
-                 <p className="text-gray-500 dark:text-gray-400 font-medium text-lg mb-10 leading-relaxed">Great news! Your career growth just leveled up. You've been matched with a professional mentor to guide your journey.</p>
-                 <div className="bg-gray-50 dark:bg-slate-900/50 p-6 rounded-[2.5rem] mb-10 border border-gray-100 dark:border-slate-800 text-left">
-                    <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Your New Guide</p>
-                    <div className="flex items-center gap-4">
-                       <div className="w-12 h-12 bg-[#3730A3] text-white rounded-2xl flex items-center justify-center font-black text-xl">{data.user?.mentor_username?.[0].toUpperCase() || 'M'}</div>
-                       <div><p className="font-black dark:text-white leading-none">{data.user?.mentor_username || "Mentor"}</p><p className="text-xs text-gray-400 font-bold mt-1 uppercase tracking-tight">Technical Expert</p></div>
-                    </div>
-                 </div>
-                 <button onClick={() => setShowCelebration(false)} className="w-full py-6 bg-[#3730A3] text-white rounded-[2rem] font-black text-xl shadow-2xl shadow-indigo-500/40 hover:scale-[1.02] transition-all">Let's Get Started</button>
-               </div>
+                <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.1, 0.2, 0.1] }} transition={{ repeat: Infinity, duration: 4 }} className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-indigo-500/20 to-emerald-500/20" />
+                <div className="relative z-10">
+                  <div className="w-24 h-24 bg-gradient-to-tr from-[#10B981] to-[#34D399] rounded-[2rem] flex items-center justify-center text-white mx-auto mb-8 shadow-2xl shadow-emerald-500/30"><UserCheck size={48} /></div>
+                  <h2 className="text-4xl font-black dark:text-white mb-4 tracking-tighter">Mentor Assigned! 🚀</h2>
+                  <p className="text-gray-500 dark:text-gray-400 font-medium text-lg mb-10 leading-relaxed">Great news! Your career growth just leveled up. You've been matched with a professional mentor to guide your journey.</p>
+                  <div className="bg-gray-50 dark:bg-slate-900/50 p-6 rounded-[2.5rem] mb-10 border border-gray-100 dark:border-slate-800 text-left">
+                     <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Your New Guide</p>
+                     <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-[#3730A3] text-white rounded-2xl flex items-center justify-center font-black text-xl">{data.user?.mentor_username?.[0].toUpperCase() || 'M'}</div>
+                        <div><p className="font-black dark:text-white leading-none">{data.user?.mentor_username || "Mentor"}</p><p className="text-xs text-gray-400 font-bold mt-1 uppercase tracking-tight">Technical Expert</p></div>
+                     </div>
+                  </div>
+                  <button onClick={() => setShowCelebration(false)} className="w-full py-6 bg-[#3730A3] text-white rounded-[2rem] font-black text-xl shadow-2xl shadow-indigo-500/40 hover:scale-[1.02] transition-all">Let's Get Started</button>
+                </div>
             </motion.div>
           </div>
         )}

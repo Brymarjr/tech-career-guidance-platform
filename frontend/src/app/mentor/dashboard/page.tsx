@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import api from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
@@ -25,13 +25,29 @@ export default function MentorDashboard() {
   const [reviewFeedback, setReviewFeedback] = useState("");
   const [reviewingId, setReviewingId] = useState<number | null>(null);
 
+  // User Menu State & Ref
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
   // Modal State
   const [confirmModal, setConfirmModal] = useState<{show: boolean, type: 'DROP' | 'BLOCK' | 'UNBLOCK', id: any, name: string}>({
     show: false, type: 'DROP', id: null, name: ''
   });
 
   const router = useRouter();
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+
+  // --- CLICK-AWAY LOGIC ---
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    if (isUserMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isUserMenuOpen]);
 
   const pendingRequestsCount = requests.filter(r => r.status === 'PENDING').length;
 
@@ -75,7 +91,6 @@ export default function MentorDashboard() {
     const { type, id } = confirmModal;
     try {
       if (type === 'DROP') {
-        // Matches backend: DELETE /api/v1/users/mentor-dashboard/<uuid>/
         await api.delete(`users/mentor-dashboard/${id}/`);
         toast.success("Student dropped from roster.");
       } else if (type === 'BLOCK') {
@@ -139,7 +154,7 @@ export default function MentorDashboard() {
       </aside>
 
       <main className="flex-1 p-6 lg:p-12 overflow-y-auto relative z-0">
-        <header className="mb-12 flex flex-col md:flex-row justify-between items-start md:items-center mb-16 gap-6 relative">
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-16 gap-6 relative">
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
             <h1 className="text-5xl font-black text-[#1F2937] dark:text-white tracking-tight mb-2">Impact Dashboard</h1>
             <p className="text-gray-500 dark:text-gray-400 font-medium text-lg">{activeTab === 'roster' ? 'A full view of your current mentees.' : activeTab === 'requests' ? 'Manage your student connection requests.' : 'Verify student milestone submissions.'}</p>
@@ -148,8 +163,7 @@ export default function MentorDashboard() {
           <div className="flex items-center gap-6">
             <NotificationBell />
             
-            {/* FULLY RESTORED USER MENU */}
-            <div className="relative">
+            <div className="relative" ref={userMenuRef}>
               <div onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className="flex items-center gap-5 bg-white dark:bg-[#1E293B] p-4 pr-10 rounded-[2rem] shadow-xl border border-gray-50 dark:border-slate-800 hover:shadow-2xl transition-all cursor-pointer group z-50">
                 <div className="w-14 h-14 bg-gradient-to-tr from-[#3730A3] to-[#10B981] rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg group-hover:rotate-6 transition-transform">
                   {user?.username ? user.username[0].toUpperCase() : 'M'}
@@ -167,15 +181,17 @@ export default function MentorDashboard() {
                       <button onClick={() => { router.push("/dashboard/settings"); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-4 p-4 text-gray-500 dark:text-gray-400 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all">
                         <User size={20} /> My Profile
                       </button>
-                      <button onClick={toggleTheme} className="w-full flex items-center justify-between p-4 text-gray-500 dark:text-gray-400 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all">
+
+                      <button onClick={(e) => { e.stopPropagation(); toggleTheme(); }} className="w-full flex items-center justify-between p-4 text-gray-500 dark:text-gray-400 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all">
                         <div className="flex items-center gap-4">
                           {isDarkMode ? <Sun size={20} className="text-yellow-400" /> : <Moon size={20} />}
                           {isDarkMode ? "Light Mode" : "Dark Mode"}
                         </div>
                         <div className={`w-10 h-6 rounded-full p-1 transition-colors ${isDarkMode ? 'bg-[#10B981]' : 'bg-gray-200'}`}>
-                          <div className={`w-4 h-4 bg-white rounded-full transition-transform ${isDarkMode ? 'translate-x-4' : 'translate-x-0'}`} />
+                          <motion.div animate={{ x: isDarkMode ? 16 : 0 }} className="w-4 h-4 bg-white rounded-full transition-transform shadow-sm" />
                         </div>
                       </button>
+
                       <hr className="border-gray-50 dark:border-slate-800 my-2" />
                       <button onClick={() => { logout(); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-4 p-4 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-2xl font-bold transition-all">
                         <LogOut size={20} /> Sign Out
@@ -215,7 +231,7 @@ export default function MentorDashboard() {
                   <td className="p-10 text-gray-400 font-bold">{s.email}</td>
                   <td className="p-10 text-right">
                     <div className="flex justify-end gap-3">
-                        <button onClick={() => router.push(`/dashboard/messages?student=${s.id}`)} className="px-5 py-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-2xl flex items-center gap-2 font-bold text-xs hover:bg-indigo-600 hover:text-white transition-all"><MessageSquare size={16}/> Message</button>
+                        <button onClick={() => router.push(`/dashboard/messages?thread=${s.thread_id}`)} className="px-5 py-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-2xl flex items-center gap-2 font-bold text-xs hover:bg-indigo-600 hover:text-white transition-all"><MessageSquare size={16}/> Message</button>
                         <button onClick={() => setConfirmModal({show: true, type: 'DROP', id: s.id, name: s.name})} className="px-5 py-3 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-2xl flex items-center gap-2 font-bold text-xs hover:bg-red-500 hover:text-white transition-all"><UserMinus size={16}/> Drop Student</button>
                     </div>
                   </td>

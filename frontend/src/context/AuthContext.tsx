@@ -52,7 +52,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const newMode = !isDarkMode;
     setIsDarkMode(newMode);
     if (newMode) {
-      document.documentElement.classList.add('dark');
+      document.documentElement.classList.add('dark'); // THIS is what turns the site dark
       localStorage.setItem('theme', 'dark');
     } else {
       document.documentElement.classList.remove('dark');
