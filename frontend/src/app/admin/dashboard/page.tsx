@@ -50,6 +50,20 @@ export default function AdminDashboard() {
   // UI States
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Click-away logic for the User Menu
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    if (isUserMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isUserMenuOpen]);
 
   const fetchAdminData = async (pageNum = 1) => {
     const token = typeof window !== "undefined" ? localStorage.getItem('access_token') : null;
@@ -182,14 +196,19 @@ export default function AdminDashboard() {
 
   const handleExportCSV = async () => {
     const token = localStorage.getItem('access_token');
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1/';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL?.endsWith('/') 
+      ? process.env.NEXT_PUBLIC_API_URL 
+      : `${process.env.NEXT_PUBLIC_API_URL}/api/v1/`;
+
     try {
       toast.loading("Preparing audit log...");
       const response = await fetch(`${baseUrl}users/admin/export-audit/`, {
         method: 'GET',
         headers: { 'Authorization': `Bearer ${token}` },
       });
+
       if (!response.ok) throw new Error('Network response was not ok');
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -201,7 +220,10 @@ export default function AdminDashboard() {
       window.URL.revokeObjectURL(url);
       toast.dismiss();
       toast.success("Download started!");
-    } catch (err) { toast.dismiss(); toast.error("Export failed."); }
+    } catch (err) { 
+      toast.dismiss(); 
+      toast.error("Export failed. Ensure CORS_EXPOSE_HEADERS is set on Render."); 
+    }
   };
 
   if (loading) return (
@@ -256,15 +278,16 @@ export default function AdminDashboard() {
             </div>
           </motion.div>
 
-          <div className="relative">
+          {/* PART 2: GLOBAL CLICKABLE USER MENU CONTAINER */}
+          <div className="relative" ref={userMenuRef}>
             <div 
               onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} 
-              className="flex items-center gap-5 bg-white dark:bg-[#1E293B] p-4 pr-10 rounded-[2rem] shadow-xl border border-gray-50 dark:border-slate-800 cursor-pointer hover:shadow-2xl transition-all z-50 group"
+              className="flex items-center gap-5 bg-white dark:bg-[#1E293B] p-4 pr-10 rounded-[2rem] shadow-xl border border-gray-50 dark:border-slate-800 cursor-pointer hover:shadow-2xl transition-all z-50 group select-none active:scale-95"
             >
-              <div className="w-14 h-14 bg-indigo-900 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg group-hover:rotate-6 transition-transform">
+              <div className="w-14 h-14 bg-indigo-900 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg group-hover:rotate-6 transition-transform pointer-events-none">
                 {user?.username ? user.username[0].toUpperCase() : 'A'}
               </div>
-              <div>
+              <div className="pointer-events-none">
                  <p className="font-black text-[#1F2937] dark:text-white text-lg">{user?.username}</p>
                  <span className="px-3 py-1 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-full text-[10px] font-black uppercase tracking-wider">Super Admin</span>
               </div>
@@ -275,7 +298,7 @@ export default function AdminDashboard() {
                 <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute right-0 mt-4 w-72 bg-white dark:bg-[#1E293B] rounded-[2.5rem] shadow-2xl p-4 z-[100] border border-gray-50 dark:border-slate-800">
                   <div className="space-y-2">
                     <button 
-                      onClick={toggleTheme} 
+                      onClick={(e) => { e.stopPropagation(); toggleTheme(); }} 
                       className="w-full flex items-center justify-between p-4 text-gray-500 dark:text-gray-400 hover:text-indigo-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all"
                     >
                       <div className="flex items-center gap-4">
@@ -336,7 +359,6 @@ export default function AdminDashboard() {
                   <tr key={u.id} className="hover:bg-indigo-50/30 transition-colors group">
                     <td className="p-12"><div className="flex items-center gap-5"><div className="w-14 h-14 bg-gradient-to-br from-indigo-50 to-white dark:from-slate-800 dark:to-slate-900 text-indigo-900 rounded-2xl flex items-center justify-center font-black text-xl border border-indigo-100 shadow-sm">{u.username[0].toUpperCase()}</div><div><p className="font-black text-[#1F2937] dark:text-white text-lg">{u.username}</p><p className="text-sm text-gray-400 font-bold">{u.email}</p></div></div></td>
                     <td><select value={u.role} onChange={(e) => handleUpdateUser(u.id, { role: e.target.value })} className="bg-gray-50 dark:bg-slate-900 dark:text-white border-2 border-gray-100 dark:border-slate-800 rounded-2xl px-6 py-3 font-black text-sm outline-none cursor-pointer appearance-none text-[#3730A3] dark:text-indigo-400"><option value="STUDENT">Student</option><option value="MENTOR">Mentor</option><option value="ADMIN">Admin</option></select></td>
-                    {/* NEW MENTOR COLUMN ADDED HERE */}
                     <td className="p-12">
                       {u.role === 'STUDENT' ? (
                         <select 

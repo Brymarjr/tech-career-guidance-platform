@@ -224,3 +224,6 @@ def patched_getaddrinfo(*args, **kwargs):
     return [res for res in responses if res[0] == socket.AF_INET]
 
 socket.getaddrinfo = patched_getaddrinfo
+
+# Required to allow the frontend to see the filename in the CSV response
+CORS_EXPOSE_HEADERS = ['Content-Disposition']
