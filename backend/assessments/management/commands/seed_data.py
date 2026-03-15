@@ -165,7 +165,7 @@ class Command(BaseCommand):
                         ms_obj, _ = Milestone.objects.get_or_create(
                             path=path_obj,
                             title=milestone_title,
-                            defaults={'description': f'Core roadmap for {milestone_title}', 'order': order_val}
+                            defaults={'order': order_val}
                         )
                         
                         if not dry_run:
