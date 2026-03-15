@@ -1,12 +1,18 @@
 import axios from 'axios';
 
+// 1. Use the environment variable, but fall back to localhost for local dev.
+// Note: We add the /api/v1/ suffix here so it's consistent.
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL 
+    ? `${process.env.NEXT_PUBLIC_API_URL}/api/v1/` 
+    : 'http://localhost:8000/api/v1/';
+
 const api = axios.create({
-  baseURL: 'http://localhost:8000/api/v1/',
+  baseURL: BASE_URL,
 });
 
-// This interceptor attaches the token to every request automatically
+// This interceptor remains the same (perfect for production)
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access_token');
+  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }

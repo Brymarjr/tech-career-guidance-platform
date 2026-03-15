@@ -1,17 +1,16 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react"; // Added Suspense
+import { useState, useEffect, useRef, Suspense } from "react";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Send, MessageSquare, ArrowLeft, Loader2, CheckCheck, 
-  ChevronLeft, ShieldAlert, ListChecks, Plus, X, Target, Award, Clock 
+  ChevronLeft, ListChecks, Plus, X, Target, Award, Clock 
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter, useSearchParams } from "next/navigation";
 
-// --- STEP 1: Move your entire original component logic into this Inner function ---
 function InboxInner() {
   const { user } = useAuth();
   const router = useRouter();
@@ -88,11 +87,22 @@ function InboxInner() {
   useEffect(() => {
     if (activeThread && user) {
       const token = localStorage.getItem('access_token');
-      const wsUrl = `ws://localhost:8000/ws/chat/${activeThread.id}/?token=${token}`;
+      
+      // --- PRODUCTION UPGRADE: DYNAMIC WEBSOCKET URL ---
+      const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const host = process.env.NEXT_PUBLIC_WS_URL 
+        ? process.env.NEXT_PUBLIC_WS_URL.replace(/^https?:\/\//, '') 
+        : 'localhost:8000';
+
+      const wsUrl = `${protocol}://${host}/ws/chat/${activeThread.id}/?token=${token}`;
+      // ------------------------------------------------
+
       socketRef.current = new WebSocket(wsUrl);
+      
       socketRef.current.onopen = () => {
         socketRef.current?.send(JSON.stringify({ type: 'read_messages' }));
       };
+      
       socketRef.current.onmessage = (e) => {
         const data = JSON.parse(e.data);
         if (data.message) {
@@ -290,7 +300,6 @@ function InboxInner() {
   );
 }
 
-// --- STEP 2: The actual exported page component that satisfies Next.js build requirements ---
 export default function InboxPage() {
   return (
     <Suspense fallback={
