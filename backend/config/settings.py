@@ -46,7 +46,6 @@ SECRET_KEY = env('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env('DEBUG')
 
-ALLOWED_HOSTS = []
 
 AUTH_USER_MODEL = 'users.CustomUser'
 
@@ -185,13 +184,20 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-# ALLOWED_HOSTS = ['your-app-name.onrender.com', 'localhost', '127.0.0.1']
-ALLOWED_HOSTS = ['*'] # Use wildcard temporarily to ensure it builds
+# --- Security & Networking ---
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "https://your-frontend-name.vercel.app", # Add your Vercel URL here
-]
+# Default to localhost if nothing is provided in .env
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['127.0.0.1', 'localhost'])
+
+# CSRF Trusted Origins (Required for Admin/Forms on Render)
+# We use .list() so you can add multiple URLs separated by commas in your .env
+CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=['http://localhost:8000', 'http://127.0.0.1:8000'])
+
+# CORS Allowed Origins (For your Vercel Frontend)
+CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=['http://localhost:3000', 'http://127.0.0.1:3000'])
+
+# Essential for Render's Proxy
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # --- Production-Grade SSL Configuration (Port 465) ---
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
