@@ -6,15 +6,18 @@ import { motion, AnimatePresence } from "framer-motion";
 import { 
   Check, X, User, MessageSquare, Clock, ShieldCheck, Mail, LogOut, 
   LayoutDashboard, Settings, Moon, Sun, TrendingUp, ExternalLink, 
-  ClipboardCheck, AlertCircle, Loader2, Send, Users, Star, Activity, BookUser, UserMinus, ShieldAlert, ShieldCheck as UnblockIcon
+  ClipboardCheck, AlertCircle, Loader2, Send, Users, Star, Activity, 
+  BookUser, UserMinus, ShieldAlert, ShieldCheck as UnblockIcon,
+  ListChecks // Added for Tasks Navigation
 } from "lucide-react";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation"; // Added usePathname
 import { useAuth } from "@/context/AuthContext"; 
 import NotificationBell from "@/components/NotificationBell";
 
 export default function MentorDashboard() {
   const { logout, user, isDarkMode, toggleTheme } = useAuth(); 
+  const pathname = usePathname(); // Added to track active link
   const [requests, setRequests] = useState<any[]>([]);
   const [roster, setRoster] = useState<any[]>([]); 
   const [submissions, setSubmissions] = useState<any[]>([]);
@@ -25,18 +28,15 @@ export default function MentorDashboard() {
   const [reviewFeedback, setReviewFeedback] = useState("");
   const [reviewingId, setReviewingId] = useState<number | null>(null);
 
-  // User Menu State & Ref
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
-  // Modal State
   const [confirmModal, setConfirmModal] = useState<{show: boolean, type: 'DROP' | 'BLOCK' | 'UNBLOCK', id: any, name: string}>({
     show: false, type: 'DROP', id: null, name: ''
   });
 
   const router = useRouter();
 
-  // --- CLICK-AWAY LOGIC ---
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
@@ -91,18 +91,18 @@ export default function MentorDashboard() {
     const { type, id } = confirmModal;
     try {
       if (type === 'DROP') {
-        await api.delete(`users/mentor-dashboard/${id}/`);
+        await api.delete(`users/mentor-dashboard/${id}//`);
         toast.success("Student dropped from roster.");
       } else if (type === 'BLOCK') {
-        await api.patch(`users/mentor-dashboard/${id}/`, { status: 'BLOCKED' });
+        await api.patch(`users/mentor-dashboard/${id}//`, { status: 'BLOCKED' });
         toast.warning("User blocked.");
       } else if (type === 'UNBLOCK') {
-        await api.patch(`users/mentor-dashboard/${id}/`, { status: 'DECLINED' });
+        await api.patch(`users/mentor-dashboard/${id}//`, { status: 'DECLINED' });
         toast.success("User unblocked.");
       }
       fetchData();
     } catch (err) {
-      toast.error("Action failed. Check API route.");
+      toast.error("Action failed.");
     } finally {
       setConfirmModal({ ...confirmModal, show: false });
     }
@@ -144,11 +144,17 @@ export default function MentorDashboard() {
         
         <nav className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar">
           <motion.div whileHover={{ x: 5 }} onClick={() => setActiveTab('roster')} className={`flex items-center gap-4 p-4 rounded-2xl font-black shadow-sm cursor-pointer transition-all ${activeTab === 'roster' ? 'bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-800'}`}><BookUser size={22} /> My Student Roster</motion.div>
+          
           <motion.div whileHover={{ x: 5 }} onClick={() => setActiveTab('requests')} className={`flex items-center justify-between p-4 rounded-2xl font-black shadow-sm cursor-pointer transition-all ${activeTab === 'requests' ? 'bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-800'}`}>
             <div className="flex items-center gap-4"><Users size={22} /> Admission Requests</div>
             {pendingRequestsCount > 0 && <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse">{pendingRequestsCount}</span>}
           </motion.div>
+          
           <motion.div whileHover={{ x: 5 }} onClick={() => setActiveTab('reviews')} className={`flex items-center justify-between p-4 rounded-2xl font-black shadow-sm cursor-pointer transition-all ${activeTab === 'reviews' ? 'bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-800'}`}><div className="flex items-center gap-4"><ClipboardCheck size={22} /> Milestone Reviews</div>{submissions.length > 0 && <span className="bg-amber-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black">{submissions.length}</span>}</motion.div>
+
+          {/* --- NEW ASSIGNED TASKS LINK --- */}
+          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/mentor/dashboard/tasks")} className={`flex items-center gap-4 p-4 rounded-2xl font-black shadow-sm cursor-pointer transition-all ${pathname === '/mentor/dashboard/tasks' ? 'bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-800'}`}><ListChecks size={22} /> Assigned Tasks</motion.div>
+
           <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/messages")} className="flex items-center justify-between p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><div className="flex items-center gap-4"><MessageSquare size={22} /> Messages</div>{unreadMessages > 0 && <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce font-black">{unreadMessages}</span>}</motion.div>
         </nav>
       </aside>
@@ -169,8 +175,8 @@ export default function MentorDashboard() {
                   {user?.username ? user.username[0].toUpperCase() : 'M'}
                 </div>
                 <div>
-                   <p className="font-black text-[#1F2937] dark:text-white text-lg">{user?.username}</p>
-                   <span className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-[#3730A3] dark:text-indigo-400 rounded-full text-[10px] font-black uppercase tracking-wider">Mentor</span>
+                    <p className="font-black text-[#1F2937] dark:text-white text-lg">{user?.username}</p>
+                    <span className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-[#3730A3] dark:text-indigo-400 rounded-full text-[10px] font-black uppercase tracking-wider">Mentor</span>
                 </div>
               </div>
 
@@ -204,7 +210,6 @@ export default function MentorDashboard() {
           </div>
         </header>
 
-        {/* STATS STRIP */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-white dark:bg-[#1E293B] p-8 rounded-[3rem] shadow-xl border border-gray-50 dark:border-slate-800 flex items-center gap-6">
             <div className="p-4 rounded-2xl bg-blue-50 dark:bg-blue-900/20 text-blue-500"><Users size={28} /></div>
@@ -287,7 +292,6 @@ export default function MentorDashboard() {
         )}
       </main>
 
-      {/* CUSTOM CONFIRMATION MODAL */}
       <AnimatePresence>
         {confirmModal.show && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">

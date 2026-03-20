@@ -6,10 +6,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer, PolarRadiusAxis } from "recharts";
 import { 
   LayoutDashboard, Award, BookOpen, User, LogOut, Target, Sparkles, TrendingUp, X, 
-  MessageSquare, Trophy, Zap, FolderGit2, UserCheck, Send, Moon, Sun, ChevronRight
+  MessageSquare, Trophy, Zap, FolderGit2, UserCheck, Send, Moon, Sun, ChevronRight,
+  ListChecks // Added for the Task link
 } from "lucide-react";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation"; // Added usePathname for active states
 import { useAuth } from "@/context/AuthContext";
 import NotificationBell from "@/components/NotificationBell";
 import BadgeIcon from "@/components/BadgeIcon"; 
@@ -18,6 +19,7 @@ import confetti from "canvas-confetti";
 
 export default function Dashboard() {
   const router = useRouter();
+  const pathname = usePathname(); // For dynamic active styling
   const { logout, user, isDarkMode, toggleTheme } = useAuth();
   const [data, setData] = useState<any>(null);
   const [chartData, setChartData] = useState<any>([]);
@@ -36,7 +38,6 @@ export default function Dashboard() {
   // --- GLOBAL CLICK-AWAY LOGIC ---
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      // Only close if the click is truly OUTSIDE the menu container
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
         setIsUserMenuOpen(false);
       }
@@ -47,7 +48,6 @@ export default function Dashboard() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isUserMenuOpen]);
 
-  // High-Energy Confetti Function
   const fireConfetti = () => {
     const end = Date.now() + 3 * 1000;
     const colors = ["#4F46E5", "#10B981", "#F59E0B"];
@@ -145,7 +145,6 @@ export default function Dashboard() {
 
   const handleOnboardingComplete = () => {
     setShowOnboarding(false);
-    // Refresh data so the onboarding status is updated locally
     fetchDashboard();
   };
 
@@ -164,9 +163,14 @@ export default function Dashboard() {
           <span className="text-2xl font-black text-[#1F2937] dark:text-white tracking-tight">TechPath <span className="text-[#10B981]">Pro</span></span>
         </div>
         <nav className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard")} className="flex items-center gap-4 p-4 bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400 rounded-2xl font-black shadow-sm cursor-pointer"><LayoutDashboard size={22} /> Dashboard</motion.div>
+          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard")} className={`flex items-center gap-4 p-4 rounded-2xl font-black shadow-sm cursor-pointer transition-all ${pathname === '/dashboard' ? 'bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-800'}`}><LayoutDashboard size={22} /> Dashboard</motion.div>
           <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/mentors")} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><Target size={22} /> Find Mentors</motion.div>
+          
           <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/messages")} className="flex items-center justify-between p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><div className="flex items-center gap-4"><MessageSquare size={22} /> Messages</div>{unreadMessages > 0 && <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce font-black">{unreadMessages}</span>}</motion.div>
+          
+          {/* --- NEW TASKS LINK --- */}
+          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/tasks")} className={`flex items-center gap-4 p-4 rounded-2xl font-bold transition-all cursor-pointer ${pathname === '/dashboard/tasks' ? 'bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400 font-black' : 'text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800'}`}><ListChecks size={22} /> Assigned Tasks</motion.div>
+          
           <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/roadmap")} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><Award size={22} /> Career Roadmap</motion.div>
           <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/achievements")} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><Trophy size={22} /> My Achievements</motion.div>
           <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/library")} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><BookOpen size={22} /> Learning Library</motion.div>
@@ -175,6 +179,7 @@ export default function Dashboard() {
         </nav>
       </aside>
 
+      {/* REST OF FILE REMAINS IDENTICAL */}
       <main className="flex-1 p-6 lg:p-12 overflow-y-auto relative z-0">
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-16 gap-6 relative">
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
@@ -203,15 +208,12 @@ export default function Dashboard() {
                   <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute right-0 mt-4 w-72 bg-white dark:bg-[#1E293B] rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-gray-50 dark:border-slate-800 p-4 z-[100] overflow-hidden">
                     <div className="space-y-2">
                       <button onClick={() => { router.push("/dashboard/settings"); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-4 p-4 text-gray-500 dark:text-gray-400 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all"><User size={20} /> My Profile</button>
-                      
-                      {/* FIX: added stopPropagation to keep menu open while toggling */}
                       <button onClick={(e) => { e.stopPropagation(); toggleTheme(); }} className="w-full flex items-center justify-between p-4 text-gray-500 dark:text-gray-400 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all">
                         <div className="flex items-center gap-4">{isDarkMode ? <Sun size={20} className="text-yellow-400" /> : <Moon size={20} />} {isDarkMode ? "Light Mode" : "Dark Mode"}</div>
                         <div className={`w-10 h-6 rounded-full p-1 transition-colors ${isDarkMode ? 'bg-[#10B981]' : 'bg-gray-200'}`}>
                           <motion.div animate={{ x: isDarkMode ? 16 : 0 }} className="w-4 h-4 bg-white rounded-full transition-transform shadow-sm" />
                         </div>
                       </button>
-
                       <hr className="border-gray-50 dark:border-slate-800 my-2" />
                       <button onClick={() => { logout(); setIsUserMenuOpen(false); }} className="w-full flex items-center gap-4 p-4 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-2xl font-bold transition-all"><LogOut size={20} /> Sign Out</button>
                     </div>
@@ -264,10 +266,8 @@ export default function Dashboard() {
         </div>
       </main>
 
-      {/* AI Sparkle Button */}
       <motion.button whileHover={{ scale: 1.1, rotate: 5 }} whileTap={{ scale: 0.9 }} onClick={() => setIsChatOpen(true)} className="fixed bottom-10 right-10 w-20 h-20 bg-gradient-to-tr from-[#3730A3] to-[#4F46E5] text-white rounded-[2rem] shadow-[0_20px_50px_rgba(55,48,163,0.3)] flex items-center justify-center z-[80] hover:shadow-indigo-500/50 transition-all border-4 border-white dark:border-slate-800"><Sparkles size={34} fill="white" /></motion.button>
 
-      {/* AI Chat Drawer */}
       <AnimatePresence>
         {isChatOpen && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center lg:justify-end lg:pr-10">
@@ -280,13 +280,12 @@ export default function Dashboard() {
                 {isTyping && (<div className="flex justify-start"><div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-gray-100 dark:border-slate-700 flex gap-2 shadow-sm"><motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1 }} className="w-2.5 h-2.5 bg-indigo-200 rounded-full" /><motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-2.5 h-2.5 bg-indigo-300 rounded-full" /><motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-2.5 h-2.5 bg-indigo-400 rounded-full" /></div></div>)}
                 <div ref={chatEndRef} />
               </div>
-              <form onSubmit={handleSendMessage} className="p-8 bg-white dark:bg-[#1E293B] border-t border-gray-50 dark:border-slate-800 flex gap-4"><input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder="Ask for advice..." className="flex-1 p-5 bg-gray-50 dark:bg-slate-900 rounded-[1.5rem] outline-none focus:ring-4 ring-indigo-50 transition-all font-bold dark:text-white" /><button type="submit" className="p-5 bg-[#10B981] text-white rounded-[1.5rem] hover:bg-[#059669] shadow-xl transition-all"><Send size={24} /></button></form>
+              <form onSubmit={handleSendMessage} className="p-8 bg-white dark:bg-[#1E293B] border-t border-gray-100 dark:border-slate-800 flex gap-4"><input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder="Ask for advice..." className="flex-1 p-5 bg-gray-50 dark:bg-slate-900 rounded-[1.5rem] outline-none focus:ring-4 ring-indigo-50 transition-all font-bold dark:text-white" /><button type="submit" className="p-5 bg-[#10B981] text-white rounded-[1.5rem] hover:bg-[#059669] shadow-xl transition-all"><Send size={24} /></button></form>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* MENTOR SUCCESS MODAL */}
       <AnimatePresence>
         {showCelebration && (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
@@ -298,11 +297,11 @@ export default function Dashboard() {
                   <h2 className="text-4xl font-black dark:text-white mb-4 tracking-tighter">Mentor Assigned! 🚀</h2>
                   <p className="text-gray-500 dark:text-gray-400 font-medium text-lg mb-10 leading-relaxed">Great news! Your career growth just leveled up. You've been matched with a professional mentor to guide your journey.</p>
                   <div className="bg-gray-50 dark:bg-slate-900/50 p-6 rounded-[2.5rem] mb-10 border border-gray-100 dark:border-slate-800 text-left">
-                     <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Your New Guide</p>
-                     <div className="flex items-center gap-4">
+                      <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Your New Guide</p>
+                      <div className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-[#3730A3] text-white rounded-2xl flex items-center justify-center font-black text-xl">{data.user?.mentor_username?.[0].toUpperCase() || 'M'}</div>
                         <div><p className="font-black dark:text-white leading-none">{data.user?.mentor_username || "Mentor"}</p><p className="text-xs text-gray-400 font-bold mt-1 uppercase tracking-tight">Technical Expert</p></div>
-                     </div>
+                      </div>
                   </div>
                   <button onClick={() => setShowCelebration(false)} className="w-full py-6 bg-[#3730A3] text-white rounded-[2rem] font-black text-xl shadow-2xl shadow-indigo-500/40 hover:scale-[1.02] transition-all">Let's Get Started</button>
                 </div>
