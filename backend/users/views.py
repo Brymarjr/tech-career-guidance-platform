@@ -5,7 +5,7 @@ import os
 import psutil
 from datetime import datetime, timedelta
 
-from django.http import HttpResponse, StreamingHttpResponse
+from django.http import HttpResponse, StreamingHttpResponse, JsonResponse
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
@@ -596,3 +596,7 @@ class MentorTaskUpdateStatusView(APIView):
                 "presence_tracking", {"type": "bell_notification", "recipient_id": str(recipient.id), "message": notif_message}
             )
         return Response(MentorTaskSerializer(task).data)
+    
+    
+def health_check(request):
+    return JsonResponse({"status": "online"}, status=200)

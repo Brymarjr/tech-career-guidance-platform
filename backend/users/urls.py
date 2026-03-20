@@ -2,13 +2,13 @@ from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     LoginView, RegisterView, RequestPasswordResetView, VerifyOTPView, 
-    ConfirmPasswordResetView, ProfileView, ChangePasswordView, # Added ChangePasswordView
+    ConfirmPasswordResetView, ProfileView, ChangePasswordView, 
     MentorListView, ConnectionRequestView, MentorDashboardView, 
     AdminGlobalStatsView, AdminUserManagementView, ExportAuditLogView, 
     SystemHealthView, StudentRequestHistoryView, StudentNotificationView, 
     MentorNotificationView, NotificationView, ThreadListView, MessageView, 
     CompleteOnboardingView, MarkCelebratedView, MentorTaskListCreateView, 
-    MentorTaskUpdateStatusView
+    MentorTaskUpdateStatusView, health_check
 )
 
 urlpatterns = [
@@ -60,4 +60,7 @@ urlpatterns = [
     # User Experience / Onboarding
     path('complete-onboarding/', CompleteOnboardingView.as_view(), name='complete-onboarding'),
     path('mark-celebrated/', MarkCelebratedView.as_view(), name='mark-celebrated'),
+    
+    # Health Check Endpoint
+    path('health/', health_check, name='health-check'),
 ]
