@@ -63,23 +63,23 @@ class ThreadSerializer(serializers.ModelSerializer):
         
         from django.utils import timezone
         import datetime
-        from .models import CustomUser
 
-        latest_data = CustomUser.objects.filter(id=other.id).values('last_activity').first()
-        actual_last_activity = latest_data['last_activity'] if latest_data else None
-
-        # Logic: Sign of life within last 2 minutes
+        # Get the timestamp from the database
+        actual_last_activity = other.last_activity
         is_online = False
+
         if actual_last_activity:
-            is_online = timezone.now() < actual_last_activity + datetime.timedelta(minutes=2)
+            # Comparison using total_seconds prevents timezone offset "ghosting"
+            diff = (timezone.now() - actual_last_activity).total_seconds()
+            is_online = diff < 120  # True if active within last 2 minutes
 
         return {
             "id": str(other.id),
             "username": other.username,
             "full_name": other.full_name,
             "role": other.role,
-            "is_online": is_online,
-            "last_seen": actual_last_activity
+            "is_online": is_online, # Frontend uses this for the green dot
+            "last_seen": actual_last_activity.isoformat() if actual_last_activity else None
         }
 
     def get_last_message(self, obj):

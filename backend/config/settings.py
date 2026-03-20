@@ -104,11 +104,17 @@ TEMPLATES = [
 ASGI_APPLICATION = 'config.asgi.application'
 
 
+REDIS_URL = env('REDIS_URL', default='redis://127.0.0.1:6379')
+
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            "hosts": [env('REDIS_URL', default='redis://127.0.0.1:6379')],
+            "hosts": [{
+                "address": REDIS_URL,
+                # Required for Upstash rediss:// connections
+                "ssl_cert_reqs": None if REDIS_URL.startswith('rediss://') else None,
+            }],
         },
     },
 }
