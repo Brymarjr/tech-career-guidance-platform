@@ -39,19 +39,20 @@ function InboxInner() {
   const fetchThreads = async () => {
     try {
       const res = await api.get(`users/threads/?v=${Date.now()}`);
-      setThreads(res.data);
-      setRefreshKey(prev => prev + 1); 
+      const freshThreads = res.data;
+      setThreads(freshThreads);
 
       const threadIdFromUrl = searchParams.get('thread');
       if (threadIdFromUrl && !activeThread) {
-        const targetThread = res.data.find((t: any) => t.id.toString() === threadIdFromUrl);
+        const targetThread = freshThreads.find((t: any) => t.id.toString() === threadIdFromUrl);
         if (targetThread) setActiveThread(targetThread);
       }
 
+      // Force update the active thread UI to show "Online Now" immediately
       if (activeThread) {
-        const refreshed = res.data.find((t: any) => t.id === activeThread.id);
+        const refreshed = freshThreads.find((t: any) => t.id === activeThread.id);
         if (refreshed) {
-            setActiveThread({...refreshed}); 
+            setActiveThread({ ...refreshed }); 
         }
       }
     } catch (err) {
@@ -60,6 +61,14 @@ function InboxInner() {
       setLoading(false);
     }
   };
+
+  // Refresh user status every 10 seconds while chatting
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchThreads();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [activeThread?.id]);
 
   const fetchMessages = async (threadId: number) => {
     try {
@@ -88,14 +97,12 @@ function InboxInner() {
     if (activeThread && user) {
       const token = localStorage.getItem('access_token');
       
-      // --- PRODUCTION UPGRADE: DYNAMIC WEBSOCKET URL ---
       const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const host = process.env.NEXT_PUBLIC_WS_URL 
         ? process.env.NEXT_PUBLIC_WS_URL.replace(/^https?:\/\//, '') 
         : 'localhost:8000';
 
       const wsUrl = `${protocol}://${host}/ws/chat/${activeThread.id}/?token=${token}`;
-      // ------------------------------------------------
 
       socketRef.current = new WebSocket(wsUrl);
       
@@ -107,7 +114,7 @@ function InboxInner() {
         const data = JSON.parse(e.data);
         if (data.message) {
             setMessages((prev) => [...prev, data.message]);
-            fetchThreads();
+            fetchThreads(); 
             if (data.message.sender_username !== user.username) {
                 socketRef.current?.send(JSON.stringify({ type: 'read_messages' }));
             }
@@ -122,7 +129,7 @@ function InboxInner() {
 
   useEffect(() => {
     fetchThreads();
-  }, [activeThread?.id, searchParams]);
+  }, [searchParams]);
 
   useEffect(() => {
     if (activeThread) {
@@ -198,6 +205,7 @@ function InboxInner() {
               <div className="flex justify-between items-start mb-1">
                 <div className="flex items-center gap-2">
                   <h3 className="font-black dark:text-white">{t.other_user.full_name || t.other_user.username}</h3>
+                  {/* ONLINE SYNC FOR SIDEBAR */}
                   {t.other_user.is_online && <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />}
                 </div>
                 <span className="text-[10px] uppercase font-bold px-2 py-1 bg-gray-100 dark:bg-slate-700 dark:text-gray-300 rounded-full">{t.other_user.role}</span>
@@ -221,6 +229,7 @@ function InboxInner() {
                     <div className="w-12 h-12 bg-indigo-500 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg">{activeThread.other_user.username[0].toUpperCase()}</div>
                     <div>
                     <h2 className="font-black text-lg dark:text-white">{activeThread.other_user.full_name || activeThread.other_user.username}</h2>
+                    {/* ONLINE SYNC FOR HEADER */}
                     {activeThread.other_user.is_online ? (
                         <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Online Now</span>
                     ) : (

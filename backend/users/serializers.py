@@ -68,6 +68,7 @@ class ThreadSerializer(serializers.ModelSerializer):
         latest_data = CustomUser.objects.filter(id=other.id).values('last_activity').first()
         actual_last_activity = latest_data['last_activity'] if latest_data else None
 
+        # Logic: Sign of life within last 2 minutes
         is_online = False
         if actual_last_activity:
             is_online = timezone.now() < actual_last_activity + datetime.timedelta(minutes=2)

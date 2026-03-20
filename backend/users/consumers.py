@@ -22,7 +22,15 @@ class PresenceConsumer(AsyncWebsocketConsumer):
             await self.update_user_status(False)
             await self.channel_layer.group_discard("presence_tracking", self.channel_name)
 
-    # Handler for the "Bell" icon updates
+    # --- ADDED HEARTBEAT HANDLER ---
+    async def receive(self, text_data):
+        try:
+            data = json.loads(text_data)
+            if data.get('type') == 'heartbeat':
+                await self.update_user_status(True)
+        except Exception:
+            pass
+
     async def bell_notification(self, event):
         if str(self.user.id) == event["recipient_id"]:
             await self.send(text_data=json.dumps({
@@ -40,6 +48,7 @@ class PresenceConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def update_user_status(self, is_online):
+        # FIX: last_seen is ONLY updated to "Now" when is_online is False (User left)
         User.objects.filter(id=self.user.id).update(
             is_online_status=is_online,
             last_seen=timezone.now() if not is_online else self.user.last_seen,
@@ -55,9 +64,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if self.user.is_authenticated:
             await self.channel_layer.group_add(self.thread_group_name, self.channel_name)
             await self.accept()
-            # Mark messages as read the moment we join the chat
             await self.mark_messages_as_read()
-            # Notify the other person that we've seen their messages
             await self.channel_layer.group_send(
                 self.thread_group_name, {"type": "messages_read_receipt"}
             )
@@ -69,11 +76,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data):
         data = json.loads(text_data)
-        
-        # FIX: Keep user online when they interact with chat
         await self.heartbeat_activity()
 
-        # Handle explicit "I have read these" signal from frontend
         if data.get('type') == 'read_messages':
             await self.mark_messages_as_read()
             await self.channel_layer.group_send(
@@ -90,20 +94,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def chat_message(self, event):
         message = event['message']
-        # Also mark as read if the recipient is currently connected to this socket
-        # This handles the "I'm looking at the screen while you type" blue tick
         if message['sender_username'] != self.user.username:
             await self.mark_messages_as_read()
-            # Send a signal back to the sender that it was seen immediately
             await self.channel_layer.group_send(
                 self.thread_group_name, {"type": "messages_read_receipt"}
             )
+        await self.send(text_data=json.dumps({'message': message}))
 
-        await self.send(text_data=json.dumps({
-            'message': message
-        }))
-
-    # Handler for the Blue Ticks
     async def messages_read_receipt(self, event):
         await self.send(text_data=json.dumps({'type': 'MESSAGES_READ'}))
 
