@@ -8,16 +8,16 @@ import {
   LayoutDashboard, Settings, Moon, Sun, TrendingUp, ExternalLink, 
   ClipboardCheck, AlertCircle, Loader2, Send, Users, Star, Activity, 
   BookUser, UserMinus, ShieldAlert, ShieldCheck as UnblockIcon,
-  ListChecks // Added for Tasks Navigation
+  ListChecks 
 } from "lucide-react";
 import { toast } from "sonner";
-import { useRouter, usePathname } from "next/navigation"; // Added usePathname
+import { useRouter, usePathname } from "next/navigation"; 
 import { useAuth } from "@/context/AuthContext"; 
 import NotificationBell from "@/components/NotificationBell";
 
 export default function MentorDashboard() {
   const { logout, user, isDarkMode, toggleTheme } = useAuth(); 
-  const pathname = usePathname(); // Added to track active link
+  const pathname = usePathname(); 
   const [requests, setRequests] = useState<any[]>([]);
   const [roster, setRoster] = useState<any[]>([]); 
   const [submissions, setSubmissions] = useState<any[]>([]);
@@ -25,7 +25,9 @@ export default function MentorDashboard() {
   const [loading, setLoading] = useState(true);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [activeTab, setActiveTab] = useState<'requests' | 'reviews' | 'roster'>('roster'); 
-  const [reviewFeedback, setReviewFeedback] = useState("");
+  
+  // FIX: Multi-id feedback state to prevent UI locking and layout scattering
+  const [reviewFeedback, setReviewFeedback] = useState<{ [key: number]: string }>({});
   const [reviewingId, setReviewingId] = useState<number | null>(null);
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -91,13 +93,13 @@ export default function MentorDashboard() {
     const { type, id } = confirmModal;
     try {
       if (type === 'DROP') {
-        await api.delete(`users/mentor-dashboard/${id}//`);
+        await api.delete(`users/mentor-dashboard/${id}/`);
         toast.success("Student dropped from roster.");
       } else if (type === 'BLOCK') {
-        await api.patch(`users/mentor-dashboard/${id}//`, { status: 'BLOCKED' });
+        await api.patch(`users/mentor-dashboard/${id}/`, { status: 'BLOCKED' });
         toast.warning("User blocked.");
       } else if (type === 'UNBLOCK') {
-        await api.patch(`users/mentor-dashboard/${id}//`, { status: 'DECLINED' });
+        await api.patch(`users/mentor-dashboard/${id}/`, { status: 'DECLINED' });
         toast.success("User unblocked.");
       }
       fetchData();
@@ -117,12 +119,19 @@ export default function MentorDashboard() {
   };
 
   const handleReviewWork = async (progressId: number, action: 'APPROVE' | 'REJECT') => {
-    if (!reviewFeedback && action === 'REJECT') return toast.error("Please provide feedback for rejection.");
+    const feedback = reviewFeedback[progressId] || "";
+    if (!feedback && action === 'REJECT') return toast.error("Please provide feedback for rejection.");
+    
     setReviewingId(progressId);
     try {
-      await api.post(`assessments/progress/${progressId}/review/`, { action, feedback: reviewFeedback });
+      await api.post(`assessments/progress/${progressId}/review/`, { action, feedback });
       toast.success(action === 'APPROVE' ? "Milestone Approved!" : "Feedback Sent.");
-      setReviewFeedback("");
+      
+      setReviewFeedback(prev => {
+        const next = {...prev};
+        delete next[progressId];
+        return next;
+      });
       fetchData();
     } catch (err) { toast.error("Review failed."); } finally { setReviewingId(null); }
   };
@@ -152,14 +161,13 @@ export default function MentorDashboard() {
           
           <motion.div whileHover={{ x: 5 }} onClick={() => setActiveTab('reviews')} className={`flex items-center justify-between p-4 rounded-2xl font-black shadow-sm cursor-pointer transition-all ${activeTab === 'reviews' ? 'bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-800'}`}><div className="flex items-center gap-4"><ClipboardCheck size={22} /> Milestone Reviews</div>{submissions.length > 0 && <span className="bg-amber-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black">{submissions.length}</span>}</motion.div>
 
-          {/* --- NEW ASSIGNED TASKS LINK --- */}
           <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/mentor/dashboard/tasks")} className={`flex items-center gap-4 p-4 rounded-2xl font-black shadow-sm cursor-pointer transition-all ${pathname === '/mentor/dashboard/tasks' ? 'bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-800'}`}><ListChecks size={22} /> Assigned Tasks</motion.div>
 
           <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/messages")} className="flex items-center justify-between p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><div className="flex items-center gap-4"><MessageSquare size={22} /> Messages</div>{unreadMessages > 0 && <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce font-black">{unreadMessages}</span>}</motion.div>
         </nav>
       </aside>
 
-      <main className="flex-1 p-6 lg:p-12 overflow-y-auto relative z-0">
+      <main className="flex-1 p-6 lg:p-12 overflow-y-auto relative z-0 custom-scrollbar">
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-16 gap-6 relative">
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
             <h1 className="text-5xl font-black text-[#1F2937] dark:text-white tracking-tight mb-2">Impact Dashboard</h1>
@@ -283,7 +291,7 @@ export default function MentorDashboard() {
               ) : (
                 submissions.map((sub) => (
                   <motion.div key={sub.id} layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white dark:bg-[#1E293B] p-10 rounded-[3rem] shadow-xl border border-indigo-50 dark:border-slate-800">
-                    <div className="flex flex-col lg:flex-row justify-between gap-8"><div className="flex-1"><div className="flex items-center gap-3 mb-4"><span className="px-4 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full text-[10px] font-black uppercase tracking-widest">{sub.path_title}</span><span className="text-gray-300">•</span><span className="text-sm font-bold text-gray-400">Submitted by {sub.student_name}</span></div><h3 className="text-3xl font-black dark:text-white mb-6">{sub.milestone_title}</h3><div className="space-y-4 mb-8"><a href={sub.submission_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-slate-900 rounded-2xl text-[#3730A3] dark:text-indigo-400 font-bold hover:bg-indigo-50 transition-all w-fit border border-indigo-100 dark:border-slate-800 group"><ExternalLink size={18} className="group-hover:rotate-12 transition-transform" /> View Project Material</a>{sub.submission_notes && (<div className="p-6 bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 italic text-gray-600 dark:text-gray-300">"{sub.submission_notes}"</div>)}</div><div className="space-y-4"><label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-2">Review Feedback</label><textarea placeholder="Add feedback..." value={reviewingId === sub.id ? reviewFeedback : ""} onChange={(e) => { setReviewingId(sub.id); setReviewFeedback(e.target.value); }} className="w-full p-6 bg-gray-50 dark:bg-slate-900 rounded-[2rem] border-2 border-transparent focus:border-indigo-500 outline-none font-bold dark:text-white resize-none transition-all" rows={3}/><div className="flex gap-4"><button onClick={() => handleReviewWork(sub.id, 'APPROVE')} disabled={reviewingId === sub.id} className="flex-1 bg-[#10B981] text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:scale-[1.02] transition-all disabled:opacity-50"><Check size={20} /> Approve</button><button onClick={() => handleReviewWork(sub.id, 'REJECT')} disabled={reviewingId === sub.id} className="flex-1 bg-red-50 dark:bg-red-900/10 text-red-500 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-red-500 hover:text-white transition-all disabled:opacity-50"><X size={20} /> Request Changes</button></div></div></div></div>
+                    <div className="flex flex-col lg:flex-row justify-between gap-8"><div className="flex-1"><div className="flex items-center gap-3 mb-4"><span className="px-4 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full text-[10px] font-black uppercase tracking-widest">{sub.path_title}</span><span className="text-gray-300">•</span><span className="text-sm font-bold text-gray-400">Submitted by {sub.student_name}</span></div><h3 className="text-3xl font-black dark:text-white mb-6">{sub.milestone_title}</h3><div className="space-y-4 mb-8"><a href={sub.submission_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-slate-900 rounded-2xl text-[#3730A3] dark:text-indigo-400 font-bold hover:bg-indigo-50 transition-all w-fit border border-indigo-100 dark:border-slate-800 group"><ExternalLink size={18} className="group-hover:rotate-12 transition-transform" /> View Project Material</a>{sub.submission_notes && (<div className="p-6 bg-white dark:bg-slate-800 rounded-2xl border border-gray-100 dark:border-slate-700 italic text-gray-600 dark:text-gray-300">"{sub.submission_notes}"</div>)}</div><div className="space-y-4"><label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-2">Review Feedback</label><textarea placeholder="Add feedback for the student..." value={reviewFeedback[sub.id] || ""} onChange={(e) => setReviewFeedback({...reviewFeedback, [sub.id]: e.target.value})} className="w-full p-6 bg-gray-50 dark:bg-slate-900 rounded-[2rem] border-2 border-transparent focus:border-indigo-500 outline-none font-bold dark:text-white resize-none transition-all" rows={3} disabled={reviewingId === sub.id}/><div className="flex gap-4"><button onClick={() => handleReviewWork(sub.id, 'APPROVE')} disabled={reviewingId !== null} className="flex-1 bg-[#10B981] text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:grayscale">{reviewingId === sub.id ? <Loader2 className="animate-spin" size={20} /> : <><Check size={20} /> Approve</>}</button><button onClick={() => handleReviewWork(sub.id, 'REJECT')} disabled={reviewingId !== null} className="flex-1 bg-red-50 dark:bg-red-900/10 text-red-500 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-red-500 hover:text-white transition-all disabled:opacity-50">{reviewingId === sub.id ? <Loader2 className="animate-spin" size={20} /> : <><X size={20} /> Request Changes</>}</button></div></div></div></div>
                   </motion.div>
                 ))
               )}

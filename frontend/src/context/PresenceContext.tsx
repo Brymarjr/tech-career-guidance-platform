@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import { toast } from "sonner";
-import { Target } from "lucide-react";
+import { Target, CheckCircle, AlertCircle } from "lucide-react";
 
 interface PresenceContextType {
     isConnected: boolean;
@@ -20,10 +20,9 @@ export const PresenceProvider = ({ children }: { children: React.ReactNode }) =>
     const [isConnected, setIsConnected] = useState(false);
     const [unreadNotifications, setUnreadNotifications] = useState(0);
     const socketRef = useRef<WebSocket | null>(null);
-    const lastHeartbeat = useRef<number>(0); // To throttle clicks/mouse moves
+    const lastHeartbeat = useRef<number>(0);
 
     useEffect(() => {
-        // CRITICAL: Only initialize if we have a user and NO existing socket
         if (!user?.loggedIn || socketRef.current) return;
 
         const connectPresence = () => {
@@ -33,7 +32,6 @@ export const PresenceProvider = ({ children }: { children: React.ReactNode }) =>
             host = host.replace(/^https?:\/\//, ''); 
 
             const wsUrl = `${protocol}://${host}/ws/presence/?token=${token}`;
-            
             const socket = new WebSocket(wsUrl);
             socketRef.current = socket;
 
@@ -47,7 +45,6 @@ export const PresenceProvider = ({ children }: { children: React.ReactNode }) =>
                 console.log("Presence Closed ❌", e.reason);
                 setIsConnected(false);
                 socketRef.current = null;
-                // Only reconnect if user didn't log out
                 if (user?.loggedIn) {
                     setTimeout(connectPresence, 5000);
                 }
@@ -55,16 +52,24 @@ export const PresenceProvider = ({ children }: { children: React.ReactNode }) =>
 
             socket.onmessage = (e) => {
                 const data = JSON.parse(e.data);
+                
+                // Handle Standard Notifications
                 if (data.type === "UPDATE_BELL_COUNT") {
                     setUnreadNotifications(prev => prev + 1);
                     window.dispatchEvent(new CustomEvent("new-notification", { detail: data.message }));
                     toast.success(data.message, { icon: <Target className="text-indigo-500" /> });
                 }
-                if (data.type === "NEW_TASK_ASSIGNED") {
-                    setUnreadNotifications(prev => prev + 1);
-                    toast.info(data.message, {
-                        description: `Assigned by ${data.mentor}`,
-                        action: { label: "View Tasks", onClick: () => window.dispatchEvent(new Event("open-task-sidebar")) },
+
+                // Handle Task Notifications (Real-time Badges)
+                if (data.type === "task_notification") {
+                    // Update global state/badges instantly
+                    window.dispatchEvent(new Event("refresh-task-counts"));
+                    
+                    const isSuccess = data.message.includes("approved") || data.message.includes("submitted");
+                    
+                    toast(data.message, {
+                        icon: isSuccess ? <CheckCircle className="text-emerald-500" /> : <AlertCircle className="text-amber-500" />,
+                        description: "Your Mission Log has been updated.",
                     });
                 }
             };
@@ -74,7 +79,6 @@ export const PresenceProvider = ({ children }: { children: React.ReactNode }) =>
 
         const throttledHeartbeat = () => {
             const now = Date.now();
-            // Only send heartbeat if at least 10 seconds passed since the last one
             if (now - lastHeartbeat.current > 10000) {
                 if (socketRef.current?.readyState === WebSocket.OPEN) {
                     socketRef.current.send(JSON.stringify({ type: 'heartbeat' }));
@@ -99,7 +103,7 @@ export const PresenceProvider = ({ children }: { children: React.ReactNode }) =>
                 socketRef.current = null;
             }
         };
-    }, [user?.loggedIn]); // Only re-run if login status changes
+    }, [user?.loggedIn]);
 
     return (
         <PresenceContext.Provider value={{ isConnected, unreadNotifications }}>

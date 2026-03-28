@@ -3,7 +3,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     LoginView, RegisterView, RequestPasswordResetView, VerifyOTPView, 
     ConfirmPasswordResetView, ProfileView, ChangePasswordView, 
-    MentorListView, ConnectionRequestView, MentorDashboardView, 
+    MentorListView, ConnectionRequestView, DropMentorView, MentorDashboardView, 
     AdminGlobalStatsView, AdminUserManagementView, ExportAuditLogView, 
     SystemHealthView, StudentRequestHistoryView, StudentNotificationView, 
     MentorNotificationView, NotificationView, ThreadListView, MessageView, 
@@ -29,6 +29,7 @@ urlpatterns = [
     path('profile/', ProfileView.as_view(), name='user-profile'),
     path('mentors/', MentorListView.as_view(), name='mentor-list'),
     path('connect/', ConnectionRequestView.as_view(), name='mentor-connect'),
+    path('drop-mentor/', DropMentorView.as_view(), name='drop-mentor'),
     
     # Mentor Dashboard & Roster Actions
     path('mentor-dashboard/', MentorDashboardView.as_view(), name='mentor-dashboard'),

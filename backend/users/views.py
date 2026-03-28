@@ -292,14 +292,27 @@ class MentorDashboardView(APIView):
             
             if new_status in ['ACCEPTED', 'DECLINED', 'BLOCKED']:
                 old_status = connection.status
-                connection.status = new_status
-                connection.save()
-
+                
                 if new_status == 'ACCEPTED':
                     student = connection.student
+                    
+                    # --- CRITICAL FIX: CHECK IF STUDENT ALREADY HAS A MENTOR ---
+                    if student.mentor:
+                        # If student already has a mentor, we cannot accept them
+                        connection.status = 'DECLINED' # Auto-decline the stale request
+                        connection.save()
+                        return Response({
+                            "error": f"This student has already been matched with another mentor (@{student.mentor.username})."
+                        }, status=400)
+
+                    # Proceed with acceptance if they are free
                     student.mentor = request.user
                     student.save()
                     Thread.objects.get_or_create(student=student, mentor=request.user)
+
+                # Update the connection status
+                connection.status = new_status
+                connection.save()
 
                 msg_text = f"Mentor {request.user.username} has {new_status.lower()} your mentorship request."
                 if old_status == 'BLOCKED' and new_status == 'DECLINED':
@@ -328,11 +341,19 @@ class MentorDashboardView(APIView):
             return Response({"error": "Student not found in roster."}, status=404)
 
 
+# Enforce Single Mentor in ConnectionRequestView
 class ConnectionRequestView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     def post(self, request):
         if request.user.role != 'STUDENT':
             return Response({"error": "Only students can initiate connections."}, status=403)
+        
+        # FIX: Check if student already has a mentor
+        if request.user.mentor:
+            return Response({
+                "error": f"You already have an active mentor (@{request.user.mentor.username}). You must drop them before requesting a new one."
+            }, status=400)
+
         mentor_id = request.data.get('mentor_id')
         message = request.data.get('message', '')
         try:
@@ -345,14 +366,36 @@ class ConnectionRequestView(APIView):
                     connection.status = 'PENDING'
                     connection.message = message
                     connection.save()
-                    Notification.objects.create(recipient=mentor, message=f"{request.user.username} re-sent request.")
                     return Response({"message": "Re-sent successfully!"})
-                return Response({"error": "Already have a request."}, status=400)
+                return Response({"error": "You already have a pending request with this mentor."}, status=400)
+            
             MentorshipConnection.objects.create(student=request.user, mentor=mentor, message=message, status='PENDING')
-            Notification.objects.create(recipient=mentor, message=f"New request from {request.user.username}.")
             return Response({"message": "Request sent successfully!"}, status=201)
         except CustomUser.DoesNotExist:
             return Response({"error": "Mentor not found."}, status=404)
+
+# Add Drop Mentor View
+class DropMentorView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    def post(self, request):
+        if not request.user.mentor:
+            return Response({"error": "You do not have an active mentor to drop."}, status=400)
+        
+        mentor = request.user.mentor
+        student = request.user
+        
+        # Clear the relationship
+        student.mentor = None
+        student.save()
+        
+        # Update connection record so they can apply elsewhere
+        MentorshipConnection.objects.filter(student=student, mentor=mentor).update(status='DECLINED')
+        
+        Notification.objects.create(
+            recipient=mentor, 
+            message=f"Student {student.username} has ended the mentorship."
+        )
+        return Response({"message": "Mentor dropped successfully."})
 
 class StudentRequestHistoryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -569,32 +612,33 @@ class MentorTaskListCreateView(APIView):
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
 
+
 class MentorTaskUpdateStatusView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     def patch(self, request, task_id):
         task = get_object_or_404(MentorTask, id=task_id)
         new_status = request.data.get('status')
-        feedback = request.data.get('mentor_feedback', '')
-        recipient = None
-        notif_message = ""
+        feedback_raw = request.data.get('mentor_feedback', '')
+
+        # FIX: If feedback is a dict/json, extract only the message string
+        if isinstance(feedback_raw, dict):
+            feedback = next(iter(feedback_raw.values())) if feedback_raw else ""
+        else:
+            feedback = feedback_raw
+
         if new_status == 'COMPLETED':
             if request.user != task.student: return Response({"error": "Unauthorized"}, status=403)
             task.status = 'COMPLETED'
-            recipient = task.mentor
-            notif_message = f"{task.student.username} completed task."
-        elif new_status in ['APPROVED', 'REDO']:
+        elif new_status in ['APPROVED', 'REJECTED', 'REDO']:
             if request.user != task.mentor: return Response({"error": "Unauthorized"}, status=403)
+            if new_status in ['REJECTED', 'REDO'] and not str(feedback).strip():
+                return Response({"error": "Feedback is required."}, status=400)
+                
             task.status = new_status
-            task.mentor_feedback = feedback
-            recipient = task.student
-            notif_message = f"Task '{task.title}' {new_status.lower()}!"
+            task.mentor_feedback = str(feedback)
             if new_status == 'APPROVED': task.student.add_xp(task.xp_reward)
+            
         task.save()
-        if recipient:
-            channel_layer = get_channel_layer()
-            async_to_sync(channel_layer.group_send)(
-                "presence_tracking", {"type": "bell_notification", "recipient_id": str(recipient.id), "message": notif_message}
-            )
         return Response(MentorTaskSerializer(task).data)
     
     

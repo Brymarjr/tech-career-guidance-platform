@@ -107,15 +107,20 @@ ASGI_APPLICATION = 'config.asgi.application'
 
 REDIS_URL = env('REDIS_URL', default='redis://127.0.0.1:6379')
 
+# Create a clean config dictionary
+redis_config = {
+    "address": REDIS_URL,
+}
+
+# ONLY add ssl_cert_reqs if we are in production using rediss://
+if REDIS_URL.startswith('rediss://'):
+    redis_config["ssl_cert_reqs"] = None
+
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            "hosts": [{
-                "address": REDIS_URL,
-                # Required for Upstash rediss:// connections
-                "ssl_cert_reqs": None if REDIS_URL.startswith('rediss://') else None,
-            }],
+            "hosts": [redis_config],
         },
     },
 }

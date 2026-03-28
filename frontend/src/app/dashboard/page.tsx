@@ -7,10 +7,10 @@ import { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer, Pola
 import { 
   LayoutDashboard, Award, BookOpen, User, LogOut, Target, Sparkles, TrendingUp, X, 
   MessageSquare, Trophy, Zap, FolderGit2, UserCheck, Send, Moon, Sun, ChevronRight,
-  ListChecks // Added for the Task link
+  ListChecks, Loader2, UserMinus
 } from "lucide-react";
 import { toast } from "sonner";
-import { useRouter, usePathname } from "next/navigation"; // Added usePathname for active states
+import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import NotificationBell from "@/components/NotificationBell";
 import BadgeIcon from "@/components/BadgeIcon"; 
@@ -19,7 +19,7 @@ import confetti from "canvas-confetti";
 
 export default function Dashboard() {
   const router = useRouter();
-  const pathname = usePathname(); // For dynamic active styling
+  const pathname = usePathname();
   const { logout, user, isDarkMode, toggleTheme } = useAuth();
   const [data, setData] = useState<any>(null);
   const [chartData, setChartData] = useState<any>([]);
@@ -29,13 +29,14 @@ export default function Dashboard() {
   const [messages, setMessages] = useState<any[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [pendingTasks, setPendingTasks] = useState(0); 
   const [showOnboarding, setShowOnboarding] = useState(false); 
   const [showCelebration, setShowCelebration] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true); 
 
   const userMenuRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // --- GLOBAL CLICK-AWAY LOGIC ---
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
@@ -47,6 +48,11 @@ export default function Dashboard() {
     }
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isUserMenuOpen]);
+
+  useEffect(() => {
+    window.addEventListener("refresh-task-counts", () => fetchDashboard(true));
+    return () => window.removeEventListener("refresh-task-counts", () => fetchDashboard(true));
+  }, []);
 
   const fireConfetti = () => {
     const end = Date.now() + 3 * 1000;
@@ -64,7 +70,7 @@ export default function Dashboard() {
     return code.split('').map(letter => traitNames[letter] || letter).join('-');
   };
 
-  const fetchDashboard = async () => {
+  const fetchDashboard = async (isRefresh = false) => {
     const token = typeof window !== "undefined" ? localStorage.getItem('access_token') : null;
     if (!token) return;
     try {
@@ -90,10 +96,18 @@ export default function Dashboard() {
           fullMark: 10,
         })));
       }
-      const threadsRes = await api.get("users/threads/");
+      
+      const [threadsRes, taskRes] = await Promise.all([
+        api.get("users/threads/"),
+        api.get("users/tasks/")
+      ]);
       setUnreadMessages(threadsRes.data.reduce((acc: number, t: any) => acc + (t.unread_count || 0), 0));
+      setPendingTasks(taskRes.data.filter((t: any) => t.status === 'PENDING' || t.status === 'REJECTED').length);
+
     } catch (err: any) {
       if (err.response?.status !== 401 && localStorage.getItem('access_token')) toast.error("Failed to load dashboard data");
+    } finally {
+      setIsInitialLoading(false); 
     }
   };
 
@@ -101,7 +115,7 @@ export default function Dashboard() {
     if (user && user.role === 'MENTOR') { router.push("/mentor/dashboard"); return; }
     if (user && user.loggedIn) {
       fetchDashboard();
-      const interval = setInterval(fetchDashboard, 30000);
+      const interval = setInterval(() => fetchDashboard(true), 30000);
       return () => clearInterval(interval);
     }
   }, [user]);
@@ -148,9 +162,11 @@ export default function Dashboard() {
     fetchDashboard();
   };
 
-  if (!data) return (
-    <div className="min-h-screen bg-[#3730A3] flex items-center justify-center">
-       <motion.div animate={{ rotate: 360, scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 2 }} className="w-16 h-16 border-4 border-[#10B981] border-t-transparent rounded-full shadow-[0_0_20px_rgba(16,185,129,0.5)]" />
+  // FIX: Fast Indigo Spinner on White background - no more blue screen flash
+  if (isInitialLoading) return (
+    <div className="min-h-screen bg-white dark:bg-[#0F172A] flex flex-col items-center justify-center transition-colors duration-500">
+       <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.6, ease: "linear" }} className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full mb-6" />
+       <p className="text-indigo-600 font-black text-sm uppercase tracking-[0.3em] animate-pulse">Syncing Hub...</p>
     </div>
   );
 
@@ -168,8 +184,10 @@ export default function Dashboard() {
           
           <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/messages")} className="flex items-center justify-between p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><div className="flex items-center gap-4"><MessageSquare size={22} /> Messages</div>{unreadMessages > 0 && <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full animate-bounce font-black">{unreadMessages}</span>}</motion.div>
           
-          {/* --- NEW TASKS LINK --- */}
-          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/tasks")} className={`flex items-center gap-4 p-4 rounded-2xl font-bold transition-all cursor-pointer ${pathname === '/dashboard/tasks' ? 'bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400 font-black' : 'text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800'}`}><ListChecks size={22} /> Assigned Tasks</motion.div>
+          <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/tasks")} className={`flex items-center justify-between p-4 rounded-2xl font-bold transition-all cursor-pointer ${pathname === '/dashboard/tasks' ? 'bg-indigo-50 dark:bg-indigo-900/40 text-[#3730A3] dark:text-indigo-400 font-black shadow-sm' : 'text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800'}`}>
+            <div className="flex items-center gap-4"><ListChecks size={22} /> Assigned Tasks</div>
+            {pendingTasks > 0 && <span className="bg-[#10B981] text-white text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse">{pendingTasks}</span>}
+          </motion.div>
           
           <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/roadmap")} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><Award size={22} /> Career Roadmap</motion.div>
           <motion.div whileHover={{ x: 5 }} onClick={() => router.push("/dashboard/achievements")} className="flex items-center gap-4 p-4 text-gray-400 dark:text-gray-500 hover:text-[#3730A3] dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800 rounded-2xl font-bold transition-all cursor-pointer"><Trophy size={22} /> My Achievements</motion.div>
@@ -179,19 +197,18 @@ export default function Dashboard() {
         </nav>
       </aside>
 
-      {/* REST OF FILE REMAINS IDENTICAL */}
-      <main className="flex-1 p-6 lg:p-12 overflow-y-auto relative z-0">
+      <main className="flex-1 p-6 lg:p-12 overflow-y-auto relative z-0 custom-scrollbar">
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-16 gap-6 relative">
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
-            <h1 className="text-5xl font-black text-[#111827] dark:text-white mb-3 tracking-tight">Hello, {data.user.username}! ✨</h1>
-            <p className="text-[#6B7280] dark:text-gray-400 text-xl font-medium mb-6">Your <span className="text-[#3730A3] dark:text-indigo-400 font-bold">{data.roadmap?.title}</span> is looking strong today.</p>
+            <h1 className="text-5xl font-black text-[#111827] dark:text-white mb-3 tracking-tight">Hello, {data?.user.username}! ✨</h1>
+            <p className="text-[#6B7280] dark:text-gray-400 text-xl font-medium mb-6">Your <span className="text-[#3730A3] dark:text-indigo-400 font-bold">{data?.roadmap?.title}</span> is looking strong today.</p>
             <div className="flex items-center gap-4 bg-white dark:bg-[#1E293B] p-4 rounded-3xl shadow-sm border border-gray-50 dark:border-slate-800 w-fit">
-              <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-amber-200">{data.user.level || 1}</div>
+              <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg shadow-amber-200">{data?.user.level || 1}</div>
               <div>
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 flex items-center gap-1"><Zap size={10} className="text-amber-500 fill-amber-500" /> Current Level</p>
                 <div className="flex items-center gap-3">
-                  <div className="h-2.5 w-40 bg-gray-100 dark:bg-slate-900 rounded-full overflow-hidden p-0.5 border border-gray-50 dark:border-slate-800"><motion.div initial={{ width: 0 }} animate={{ width: `${((data.user.xp_total || 0) % 500) / 5}%` }} className="h-full bg-gradient-to-r from-amber-400 to-amber-600 rounded-full" /></div>
-                  <span className="text-[10px] font-black text-amber-600 whitespace-nowrap">{(data.user.xp_total || 0) % 500} / 500 XP</span>
+                  <div className="h-2.5 w-40 bg-gray-100 dark:bg-slate-900 rounded-full overflow-hidden p-0.5 border border-gray-50 dark:border-slate-800"><motion.div initial={{ width: 0 }} animate={{ width: `${((data?.user.xp_total || 0) % 500) / 5}%` }} className="h-full bg-gradient-to-r from-amber-400 to-amber-600 rounded-full" /></div>
+                  <span className="text-[10px] font-black text-amber-600 whitespace-nowrap">{(data?.user.xp_total || 0) % 500} / 500 XP</span>
                 </div>
               </div>
             </div>
@@ -200,8 +217,8 @@ export default function Dashboard() {
             <NotificationBell />
             <div className="relative" ref={userMenuRef}>
               <div onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className="flex items-center gap-5 bg-white dark:bg-[#1E293B] p-4 pr-10 rounded-[2rem] shadow-xl border border-gray-50 dark:border-slate-800 hover:shadow-2xl transition-all cursor-pointer group z-50">
-                <div className="w-14 h-14 bg-gradient-to-tr from-[#3730A3] to-[#10B981] rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg group-hover:rotate-6 transition-transform">{data.user.username[0].toUpperCase()}</div>
-                <div><p className="font-black text-[#1F2937] dark:text-white text-lg">{data.user.username}</p><span className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-[#3730A3] dark:text-indigo-400 rounded-full text-[10px] font-black uppercase tracking-wider">{data.user.role || 'Member'}</span></div>
+                <div className="w-14 h-14 bg-gradient-to-tr from-[#3730A3] to-[#10B981] rounded-2xl flex items-center justify-center text-white font-black text-xl shadow-lg group-hover:rotate-6 transition-transform">{data?.user.username[0].toUpperCase()}</div>
+                <div><p className="font-black text-[#1F2937] dark:text-white text-lg">{data?.user.username}</p><span className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-[#3730A3] dark:text-indigo-400 rounded-full text-[10px] font-black uppercase tracking-wider">{data?.user.role || 'Member'}</span></div>
               </div>
               <AnimatePresence>
                 {isUserMenuOpen && (
@@ -237,15 +254,15 @@ export default function Dashboard() {
               <div className="relative z-10">
                 <div className="bg-white/20 w-fit p-5 rounded-[1.5rem] mb-8 shadow-inner"><Target size={32} /></div>
                 <h3 className="text-3xl font-black mb-3">Dominant Trait</h3>
-                <h4 className="text-[#10B981] text-3xl font-black mb-8 uppercase tracking-tighter flex items-center gap-3"><Sparkles size={28} /> {formatTrait(data.assessment.top_trait)}</h4>
-                <p className="text-indigo-100 text-lg font-medium leading-relaxed opacity-90">Your profile suggests a natural aptitude for <span className="text-white font-bold">{formatTrait(data.assessment.top_trait)}</span> environments.</p>
+                <h4 className="text-[#10B981] text-3xl font-black mb-8 uppercase tracking-tighter flex items-center gap-3"><Sparkles size={28} /> {formatTrait(data?.assessment.top_trait)}</h4>
+                <p className="text-indigo-100 text-lg font-medium leading-relaxed opacity-90">Your profile suggests a natural aptitude for <span className="text-white font-bold">{formatTrait(data?.assessment.top_trait)}</span> environments.</p>
               </div>
             </motion.div>
 
             <div className="bg-white dark:bg-[#1E293B] p-10 rounded-[3.5rem] border border-gray-100 dark:border-slate-800 shadow-xl relative overflow-hidden">
-              <div className="flex justify-between items-center mb-8"><h3 className="text-xl font-black dark:text-white flex items-center gap-3"><Trophy className="text-amber-500" size={24} /> Achievements</h3><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 dark:bg-slate-800 px-3 py-1 rounded-full">{data.achievements?.length || 0} Unlocked</span></div>
+              <div className="flex justify-between items-center mb-8"><h3 className="text-xl font-black dark:text-white flex items-center gap-3"><Trophy className="text-amber-500" size={24} /> Achievements</h3><span className="text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50 dark:bg-slate-800 px-3 py-1 rounded-full">{data?.achievements?.length || 0} Unlocked</span></div>
               <div className="flex flex-wrap gap-4">
-                {data.achievements && data.achievements.length > 0 ? (
+                {data?.achievements && data.achievements.length > 0 ? (
                   data.achievements.map((item: any, idx: number) => (
                     <motion.div key={item.id || idx} whileHover={{ scale: 1.1, rotate: 5 }} className="group relative"><div className="w-16 h-16 bg-amber-50 dark:bg-amber-900/20 rounded-2xl flex items-center justify-center text-amber-600 border border-amber-100 dark:border-amber-900/30 shadow-sm transition-all hover:shadow-amber-200/50"><BadgeIcon name={item.achievement.badge_icon} size={28} /></div><div className="absolute bottom-full mb-3 left-1/2 -translate-x-1/2 w-40 p-3 bg-[#111827] text-white text-[10px] rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-2xl z-50 text-center"><p className="font-black mb-1">{item.achievement.title}</p><p className="text-gray-400 font-medium leading-tight">{item.achievement.description}</p></div></motion.div>
                   ))
@@ -258,8 +275,8 @@ export default function Dashboard() {
             <div className="bg-white dark:bg-[#1E293B] p-12 rounded-[3.5rem] border border-gray-100 dark:border-slate-800 shadow-xl relative overflow-hidden">
               <div className="flex items-center justify-between mb-8"><h4 className="font-black text-[#1F2937] dark:text-white text-xl">Course Progress</h4><TrendingUp className="text-[#10B981]" size={24} /></div>
               <div className="space-y-6">
-                <div className="flex justify-between font-black text-sm text-gray-400 uppercase tracking-widest"><span>Journey Status</span><span className="text-[#3730A3] dark:text-indigo-400">{Math.round(data.roadmap?.completion_percentage || 0)}%</span></div>
-                <div className="h-6 w-full bg-gray-50 dark:bg-slate-900 rounded-full overflow-hidden p-1.5 border border-gray-100 dark:border-slate-800"><motion.div initial={{ width: 0 }} animate={{ width: `${data.roadmap?.completion_percentage || 0}%` }} transition={{ type: "spring", bounce: 0.4, duration: 1.5 }} className="h-full bg-gradient-to-r from-[#10B981] to-[#34D399] rounded-full shadow-[0_0_20px_rgba(16,185,129,0.4)]" /></div>
+                <div className="flex justify-between font-black text-sm text-gray-400 uppercase tracking-widest"><span>Journey Status</span><span className="text-[#3730A3] dark:text-indigo-400">{Math.round(data?.roadmap?.completion_percentage || 0)}%</span></div>
+                <div className="h-6 w-full bg-gray-50 dark:bg-slate-900 rounded-full overflow-hidden p-1.5 border border-gray-100 dark:border-slate-800"><motion.div initial={{ width: 0 }} animate={{ width: `${data?.roadmap?.completion_percentage || 0}%` }} transition={{ type: "spring", bounce: 0.4, duration: 1.5 }} className="h-full bg-gradient-to-r from-[#10B981] to-[#34D399] rounded-full shadow-[0_0_20px_rgba(16,185,129,0.4)]" /></div>
               </div>
             </div>
           </div>
@@ -275,7 +292,7 @@ export default function Dashboard() {
             <motion.div initial={{ opacity: 0, y: 100, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 100, scale: 0.9 }} className="relative w-[95%] max-w-[450px] h-[750px] bg-white dark:bg-[#1E293B] rounded-[4rem] shadow-[0_40px_100px_rgba(0,0,0,0.15)] border border-gray-100 dark:border-slate-800 flex flex-col overflow-hidden">
               <div className="p-8 bg-[#3730A3] text-white flex justify-between items-center"><div className="flex items-center gap-4"><div className="w-14 h-14 bg-white/20 rounded-[1.5rem] flex items-center justify-center shadow-inner"><Target size={28} /></div><div><p className="font-black text-xl leading-none">Career Mentor</p><p className="text-xs text-indigo-200 mt-2 font-bold uppercase tracking-widest">AI Context Active</p></div></div><button onClick={() => setIsChatOpen(false)} className="hover:bg-white/10 p-3 rounded-2xl transition-colors"><X size={28} /></button></div>
               <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-[#FBFBFF] dark:bg-slate-900/50 custom-scrollbar">
-                {messages.length === 0 && (<div className="text-center py-20 opacity-40"><div className="w-24 h-24 bg-indigo-100 dark:bg-indigo-900/30 text-[#3730A3] dark:text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-6"><Sparkles size={40} /></div><p className="text-[#1F2937] dark:text-white font-black text-xl">I'm your {formatTrait(data.assessment.top_trait)} Mentor.</p></div>)}
+                {messages.length === 0 && (<div className="text-center py-20 opacity-40"><div className="w-24 h-24 bg-indigo-100 dark:bg-indigo-900/30 text-[#3730A3] dark:text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-6"><Sparkles size={40} /></div><p className="text-[#1F2937] dark:text-white font-black text-xl">I'm your {formatTrait(data?.assessment.top_trait)} Mentor.</p></div>)}
                 {messages.map((msg, i) => (<motion.div initial={{ opacity: 0, x: msg.role === 'user' ? 20 : -20 }} animate={{ opacity: 1, x: 0 }} key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[85%] p-6 rounded-[2rem] font-bold text-sm lg:text-base leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-[#3730A3] text-white rounded-br-none shadow-indigo-200' : 'bg-white dark:bg-slate-800 text-[#1F2937] dark:text-white border border-gray-100 dark:border-slate-700 rounded-bl-none shadow-gray-100'}`}>{msg.content}</div></motion.div>))}
                 {isTyping && (<div className="flex justify-start"><div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-gray-100 dark:border-slate-700 flex gap-2 shadow-sm"><motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1 }} className="w-2.5 h-2.5 bg-indigo-200 rounded-full" /><motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-2.5 h-2.5 bg-indigo-300 rounded-full" /><motion.span animate={{ scale: [1, 1.5, 1] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-2.5 h-2.5 bg-indigo-400 rounded-full" /></div></div>)}
                 <div ref={chatEndRef} />
@@ -299,8 +316,8 @@ export default function Dashboard() {
                   <div className="bg-gray-50 dark:bg-slate-900/50 p-6 rounded-[2.5rem] mb-10 border border-gray-100 dark:border-slate-800 text-left">
                       <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">Your New Guide</p>
                       <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-[#3730A3] text-white rounded-2xl flex items-center justify-center font-black text-xl">{data.user?.mentor_username?.[0].toUpperCase() || 'M'}</div>
-                        <div><p className="font-black dark:text-white leading-none">{data.user?.mentor_username || "Mentor"}</p><p className="text-xs text-gray-400 font-bold mt-1 uppercase tracking-tight">Technical Expert</p></div>
+                        <div className="w-12 h-12 bg-[#3730A3] text-white rounded-2xl flex items-center justify-center font-black text-xl">{data?.user?.mentor_username?.[0].toUpperCase() || 'M'}</div>
+                        <div><p className="font-black dark:text-white leading-none">{data?.user?.mentor_username || "Mentor"}</p><p className="text-xs text-gray-400 font-bold mt-1 uppercase tracking-tight">Technical Expert</p></div>
                       </div>
                   </div>
                   <button onClick={() => setShowCelebration(false)} className="w-full py-6 bg-[#3730A3] text-white rounded-[2rem] font-black text-xl shadow-2xl shadow-indigo-500/40 hover:scale-[1.02] transition-all">Let's Get Started</button>

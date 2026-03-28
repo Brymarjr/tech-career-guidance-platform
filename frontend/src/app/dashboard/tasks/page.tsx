@@ -6,7 +6,8 @@ import { useAuth } from "@/context/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Target, Award, Clock, CheckCircle2, 
-  MessageCircle, Loader2, Zap, Search, Filter, ChevronLeft
+  MessageCircle, Loader2, Zap, Search, Filter, ChevronLeft,
+  AlertCircle
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -17,6 +18,7 @@ export default function StudentTasksPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [threads, setThreads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [processingId, setProcessingId] = useState<number | null>(null);
   
   // Search & Filter States
   const [searchTerm, setSearchTerm] = useState("");
@@ -42,11 +44,16 @@ export default function StudentTasksPage() {
   }, []);
 
   const handleUpdateTask = async (taskId: number, status: string) => {
+    setProcessingId(taskId);
     try {
       await api.patch(`users/tasks/${taskId}/update/`, { status });
-      toast.success(`Task marked as ${status.toLowerCase()}!`);
+      toast.success(`Submission transmitted!`);
       fetchData();
-    } catch (err) { toast.error("Action failed."); }
+    } catch (err) { 
+      toast.error("Transmission failed."); 
+    } finally {
+      setProcessingId(null);
+    }
   };
 
   // Filter & Search Logic
@@ -94,7 +101,7 @@ export default function StudentTasksPage() {
           <div className="bg-white dark:bg-[#1E293B] p-8 rounded-[2.5rem] border border-gray-50 dark:border-slate-800 shadow-sm">
             <h3 className="font-black dark:text-white mb-6 flex items-center gap-2"><Filter size={18} className="text-indigo-500" /> Filter</h3>
             <div className="space-y-2">
-              {['ALL', 'PENDING', 'COMPLETED', 'APPROVED'].map((status) => (
+              {['ALL', 'PENDING', 'COMPLETED', 'APPROVED', 'REJECTED'].map((status) => (
                 <button 
                   key={status}
                   onClick={() => setStatusFilter(status)}
@@ -113,7 +120,7 @@ export default function StudentTasksPage() {
           <div className="bg-[#3730A3] p-8 rounded-[3rem] text-white relative overflow-hidden">
             <Zap className="absolute right-[-10px] top-[-10px] size-32 opacity-10" />
             <h3 className="text-xl font-black mb-2">Need Help?</h3>
-            <p className="text-indigo-200 text-xs font-medium mb-6">Message your mentor if an objective is unclear.</p>
+            <p className="text-indigo-200 text-xs font-medium mb-6">Ask your mentor for guidance on your active tasks.</p>
             <div className="space-y-2">
               {threads.map((t) => (
                 <button 
@@ -148,47 +155,66 @@ export default function StudentTasksPage() {
                   animate={{ opacity: 1, scale: 1 }} 
                   exit={{ opacity: 0, scale: 0.98 }}
                   key={task.id} 
-                  className="p-8 bg-white dark:bg-[#1E293B] rounded-[3rem] border border-gray-50 dark:border-slate-800 shadow-sm transition-all flex flex-col md:flex-row gap-6 items-start md:items-center justify-between group"
+                  className="p-8 bg-white dark:bg-[#1E293B] rounded-[3rem] border border-gray-50 dark:border-slate-800 shadow-sm transition-all flex flex-col gap-6 group"
                 >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${
-                        task.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-600' : 
-                        task.status === 'COMPLETED' ? 'bg-indigo-100 text-indigo-600' : 'bg-amber-100 text-amber-600'
-                      }`}>
-                        {task.status}
-                      </span>
-                      <span className="text-indigo-500 font-black text-xs flex items-center gap-1">
-                        <Award size={14} /> +{task.xp_reward} XP
-                      </span>
+                  <div className="flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-3">
+                        <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${
+                          task.status === 'APPROVED' ? 'bg-emerald-100 text-emerald-600' : 
+                          task.status === 'COMPLETED' ? 'bg-indigo-100 text-indigo-600' : 
+                          task.status === 'REJECTED' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'
+                        }`}>
+                          {task.status}
+                        </span>
+                        <span className="text-indigo-500 font-black text-xs flex items-center gap-1">
+                          <Award size={14} /> +{task.xp_reward} XP
+                        </span>
+                      </div>
+                      <h3 className="text-xl font-black dark:text-white mb-1 group-hover:text-indigo-600 transition-colors">{task.title}</h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 font-medium line-clamp-2">{task.description}</p>
+                      <p className="text-[10px] text-gray-400 font-black uppercase mt-4 tracking-widest flex items-center gap-2">
+                        <Target size={12} /> Assigned by @{task.mentor_username}
+                      </p>
                     </div>
-                    <h3 className="text-xl font-black dark:text-white mb-1 group-hover:text-indigo-600 transition-colors">{task.title}</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium line-clamp-2">{task.description}</p>
-                    <p className="text-[10px] text-gray-400 font-black uppercase mt-4 tracking-widest flex items-center gap-2">
-                      <Target size={12} /> Assigned by @{task.mentor_username}
-                    </p>
+
+                    <div className="flex items-center gap-4 w-full md:w-auto">
+                      {(task.status === 'PENDING' || task.status === 'REJECTED') && (
+                        <button 
+                          onClick={() => handleUpdateTask(task.id, 'COMPLETED')} 
+                          disabled={processingId === task.id}
+                          className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-10 py-4 rounded-2xl font-black text-sm uppercase shadow-lg shadow-indigo-500/30 transition-all hover:scale-105 active:scale-95 flex items-center justify-center"
+                        >
+                          {processingId === task.id ? <Loader2 className="animate-spin" size={18} /> : (task.status === 'REJECTED' ? 'Resubmit' : 'Mark Finished')}
+                        </button>
+                      )}
+                      {task.status === 'COMPLETED' && (
+                        <div className="flex items-center gap-2 text-indigo-500 font-black uppercase text-xs tracking-widest bg-indigo-50 dark:bg-indigo-900/30 px-6 py-4 rounded-2xl w-full md:w-auto justify-center border border-indigo-100 dark:border-indigo-900/40">
+                          <Clock size={16} className="animate-spin" /> Verifying...
+                        </div>
+                      )}
+                      {task.status === 'APPROVED' && (
+                        <div className="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-2xl text-emerald-600 border border-emerald-100 dark:border-emerald-900/30">
+                          <CheckCircle2 size={32} />
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-4 w-full md:w-auto">
-                    {task.status === 'PENDING' && (
-                      <button 
-                        onClick={() => handleUpdateTask(task.id, 'COMPLETED')} 
-                        className="w-full md:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-10 py-4 rounded-2xl font-black text-sm uppercase shadow-lg shadow-indigo-500/30 transition-all hover:scale-105 active:scale-95"
-                      >
-                        Mark Finished
-                      </button>
-                    )}
-                    {task.status === 'COMPLETED' && (
-                      <div className="flex items-center gap-2 text-indigo-500 font-black uppercase text-xs tracking-widest bg-indigo-50 dark:bg-indigo-900/30 px-6 py-4 rounded-2xl w-full md:w-auto justify-center">
-                        <Clock size={16} className="animate-spin" /> Awaiting XP
+                  {/* Feedback UI for Rejected Tasks */}
+                  {task.mentor_feedback && (
+                    <div className="p-5 bg-red-50 dark:bg-red-900/10 rounded-2xl border border-red-100 dark:border-red-900/30 flex gap-4 items-start">
+                      <div className="bg-red-500 text-white p-1 rounded-lg">
+                        <AlertCircle size={16} />
                       </div>
-                    )}
-                    {task.status === 'APPROVED' && (
-                      <div className="bg-emerald-100 dark:bg-emerald-900/30 p-3 rounded-full text-emerald-600">
-                        <CheckCircle2 size={32} />
+                      <div className="flex-1">
+                        <p className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-1">Mentor Feedback</p>
+                        <p className="text-xs font-bold text-gray-600 dark:text-gray-300 italic leading-relaxed">
+                          "{task.mentor_feedback}"
+                        </p>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </motion.div>
               ))
             )}
